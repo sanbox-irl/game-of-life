@@ -1,0 +1,36 @@
+[package]
+name = "game_of_life"
+version = "0.1.0"
+authors = ["jjspira"]
+edition = "2018"
+
+[features]
+default = ["metal"]
+metal = ["gfx-backend-metal"]
+dx12 = ["gfx-backend-dx12"]
+vulkan = ["gfx-backend-vulkan"]
+
+[dependencies]
+winit = "0.19.2"
+log = "0.4.8"
+env_logger = "0.6.2"
+gfx-hal = "0.3.0"
+arrayvec = "0.4.11"
+shaderc = "0.6.1"
+nalgebra-glm = "0.4.0"
+bitflags = "1.1.0"
+
+[dependencies.gfx-backend-vulkan]
+version = "0.3"
+optional = true
+features = ["winit"]
+
+[target.'cfg(target_os = "macos")'.dependencies.gfx-backend-metal]
+version = "0.3"
+optional = true
+features = ["winit"]
+
+[target.'cfg(windows)'.dependencies.gfx-backend-dx12]
+version = "0.3"
+optional = true
+features = ["winit"]

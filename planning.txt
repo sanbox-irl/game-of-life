@@ -1,0 +1,31 @@
+Entity
+[
+    Enum --> {
+        Unborn,
+        Alive,
+        Dead
+    }
+
+    time: Seconds alive --> (use this in the frag shader to get pretty colors!)
+]
+
+GameState
+[
+    Frame1 -- ArrayVec of 2 dimensions -- max size of ?? (Bucket array automatic resizing)
+    Frame2
+]
+
+On frame x % 2 == 0 -> {
+    for x
+        for y
+            compute the value of Entity --> place in ArrayVec2 (do we move? yes. let's move.)
+}
+
+frame frame x % 2 == 1 -> {
+    for x
+        for y
+            compute the value of Entity -> place in ArrayVec1 (we move.)
+}
+
+
+Camera should be a Orthographic projection -- zoom controls up to a certain extent.
