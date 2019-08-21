@@ -41,7 +41,11 @@ impl Game {
 
     pub fn main_loop(&mut self) -> bool {
         loop {
+            // get input
             self.user_input.poll_events_loop(&mut self.window.events_loop);
+            if self.handle_window_events() == false {
+                break false;
+            }
 
             // update
             self.camera.update_position(&self.user_input.held_keys, 0.05);
@@ -63,13 +67,7 @@ impl Game {
             match renderer.draw_quad_frame(&self.entities, &self.camera.make_view_matrix()) {
                 Ok(sub_optimal) => {
                     if let Some(_) = sub_optimal {
-                        if let Err(e) = renderer.recreate_swapchain(&self.window.window) {
-                            error!("{}", e);
-                            error!("Couldn't recreate the swapchain. Exiting...");
-                            false
-                        } else {
-                            true
-                        }
+                        Game::recreate_swapchain(renderer, &self.window)
                     } else {
                         true
                     }
@@ -77,19 +75,12 @@ impl Game {
 
                 Err(e) => match e {
                     DrawingError::AcquireAnImageFromSwapchain | DrawingError::PresentIntoSwapchain => {
-                        debug!("Creating new swapchain!");
-                        if let Err(e) = renderer.recreate_swapchain(&self.window.window) {
-                            error!("{}", e);
-                            error!("Couldn't recreate the swapchain. Exiting...");
-                            false
-                        } else {
-                            true
-                        }
+                        Game::recreate_swapchain(renderer, &self.window)
                     }
 
                     DrawingError::ResetFence | DrawingError::WaitOnFence => {
                         error!("Rendering Error: {:?}", e);
-                        info!("Auo-restarting Renderer...");
+                        error!("Auo-restarting Renderer...");
 
                         self.renderer = None;
                         let ret = TypedRenderer::typed_new(&self.window);
@@ -97,7 +88,7 @@ impl Game {
                         match ret {
                             Ok(new_value) => {
                                 self.renderer = Some(new_value);
-                                info!("Succesfully restarted Renderer!");
+                                debug!("Succesfully restarted Renderer!");
                                 true
                             }
 
@@ -111,6 +102,31 @@ impl Game {
             }
         } else {
             false
+        }
+    }
+
+    fn handle_window_events(&mut self) -> bool {
+        if self.user_input.new_frame_size.is_some() {
+            debug!("Window changed size, creating a new swapchain...");
+
+            if let Some(renderer) = &mut self.renderer {
+                Game::recreate_swapchain(renderer, &self.window)
+            } else {
+                false
+            }
+        } else {
+            true
+        }
+    }
+
+    fn recreate_swapchain(renderer: &mut TypedRenderer, window: &Window) -> bool {
+        debug!("Attempting to create a new swapchain!");
+        if let Err(e) = renderer.recreate_swapchain(&window.window) {
+            error!("{}", e);
+            error!("Couldn't recreate the swapchain. Exiting...");
+            false
+        } else {
+            true
         }
     }
 }
