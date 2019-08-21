@@ -31,7 +31,7 @@ use gfx_backend_metal as back;
 #[cfg(feature = "vulkan")]
 use gfx_backend_vulkan as back;
 
-use super::{BufferBundle, Entity, Vertex, QUAD_INDICES, QUAD_VERTICES, Window};
+use super::{BufferBundle, Entity, Vertex, Window, QUAD_INDICES, QUAD_VERTICES};
 
 pub const VERTEX_SOURCE: &str = include_str!("shaders/vert_default.vert");
 pub const FRAGMENT_SOURCE: &str = include_str!("shaders/frag_default.frag");
@@ -540,7 +540,7 @@ impl<I: Instance> Renderer<I> {
 
     pub fn draw_quad_frame(
         &mut self,
-        entities: &[Entity],
+        entities: &[Vec<Entity>],
         view_projection: &glm::TMat4<f32>,
     ) -> Result<Option<Suboptimal>, DrawingError> {
         // SETUP FOR THIS FRAME
@@ -591,27 +591,26 @@ impl<I: Instance> Renderer<I> {
                     index_type: IndexType::U16,
                 });
 
-                for entity in entities {
-                    let mvp = {
-                        let position_matrix = view_projection * entity.position.into_glm_tmat4(0.0);
-                        glm::scale(
-                            &position_matrix,
-                            &glm::make_vec3(&[1.0 / 16.0, 1.0 / 9.0, 1.0]),
-                        )
-                    };
+                for row in entities {
+                    for entity in row {
+                        let mvp = {
+                            let position_matrix = view_projection * entity.coordinate.into_vec2().into_glm_tmat4(0.0);
+                            glm::scale(&position_matrix, &glm::make_vec3(&[1.0, 16.0 / 9.0, 1.0]))
+                        };
 
-                    // todo write the colors here...
+                        // todo write the colors here...
 
-                    // send off the projection to the vert shad
-                    encoder.push_graphics_constants(
-                        &self.pipeline_layout,
-                        ShaderStageFlags::VERTEX,
-                        0,
-                        cast_slice::<f32, u32>(&mvp.data)
-                            .expect("this cast never fails for same-aligned same-size data"),
-                    );
+                        // send off the projection to the vert shad
+                        encoder.push_graphics_constants(
+                            &self.pipeline_layout,
+                            ShaderStageFlags::VERTEX,
+                            0,
+                            cast_slice::<f32, u32>(&mvp.data)
+                                .expect("this cast never fails for same-aligned same-size data"),
+                        );
 
-                    encoder.draw_indexed(0..6, 0, 0..1);
+                        encoder.draw_indexed(0..6, 0, 0..1);
+                    }
                 }
             }
             buffer.finish();

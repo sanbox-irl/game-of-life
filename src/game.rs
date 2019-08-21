@@ -1,17 +1,18 @@
 use super::ecs::{Camera, Entity, UserInput, Window};
 use super::rendering::{DrawingError, TypedRenderer};
-use super::utilities::Vec2;
-use arrayvec::ArrayVec;
+use super::utilities::{Coord2, Vec2};
 use nalgebra_glm as glm;
 
 const DEFAULT_SIZE: Vec2 = Vec2 { x: 1280.0, y: 720.0 };
+
+const ARRAY_SIZE: Coord2 = Coord2 { x: 10, y: 10 };
 
 pub struct Game {
     window: Window,
     user_input: UserInput,
     renderer: Option<TypedRenderer>,
     camera: Camera,
-    entities: ArrayVec<[Entity; 1024]>,
+    entities: Vec<Vec<Entity>>,
 }
 
 impl Game {
@@ -20,15 +21,24 @@ impl Game {
         let user_input = UserInput::new();
 
         let renderer = TypedRenderer::typed_new(&window)?;
-        let mut entities = ArrayVec::new();
-        entities.push(Entity {
-            position: Vec2::new(0.0, 0.0),
-        });
+
         let camera = Camera::new_at_position(Vec2::new(0.0, 0.0), {
-            let mut temp = glm::ortho_lh_zo(-1.0, 1.0, -1.0, 1.0, 0.1, 10.0);
+            let mut temp = glm::ortho_lh_zo(-5.0, 5.0, -5.0, 5.0, 0.1, 10.0);
             temp[(1, 1)] *= -1.0;
             temp
         });
+        
+        // Initialize Entities...
+        let mut entities = vec![];
+        for y in 0..ARRAY_SIZE.y {
+            let mut this_vec = vec![];
+            for x in 0..ARRAY_SIZE.x {
+                this_vec.push(Entity::new(Coord2::new(x, y)));
+            }
+            entities.push(this_vec);
+        }
+
+        info!("Entities: {:#?}", entities);
 
         Ok(Game {
             window,

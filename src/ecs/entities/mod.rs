@@ -1,5 +1,5 @@
-pub use super::Vec2;
+pub use super::{Vec2, Coord2};
 
 mod entity;
 
-pub use entity::Entity;
+pub use entity::{Entity, State};

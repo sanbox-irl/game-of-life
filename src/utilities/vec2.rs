@@ -19,3 +19,22 @@ impl Vec2 {
         glm::make_vec3(&[self.x, self.y, z])
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct Coord2 {
+    pub x: i32,
+    pub y: i32,
+}
+
+impl Coord2 {
+    pub fn new(x: i32, y: i32) -> Self {
+        Coord2 { x, y }
+    }
+
+    pub fn into_vec2(self) -> Vec2 {
+        Vec2 {
+            x: self.x as f32,
+            y: self.y as f32,
+        }
+    }
+}
