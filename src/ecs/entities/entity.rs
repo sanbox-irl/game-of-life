@@ -15,7 +15,7 @@ impl Entity {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum State {
     Unborn,
     Alive,
