@@ -1,4 +1,5 @@
 pub use super::utilities::Vec2;
+pub use super::ecs::Window;
 
 macro_rules! manual_drop {
     ($this_val:expr) => {

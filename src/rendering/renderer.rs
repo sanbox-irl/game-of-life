@@ -22,7 +22,7 @@ use gfx_hal::{
 };
 use nalgebra_glm as glm;
 use std::{borrow::Cow, mem, ops::Deref};
-use winit::Window;
+use winit::Window as WinitWindow;
 
 #[cfg(feature = "dx12")]
 use gfx_backend_dx12 as back;
@@ -31,7 +31,7 @@ use gfx_backend_metal as back;
 #[cfg(feature = "vulkan")]
 use gfx_backend_vulkan as back;
 
-use super::{BufferBundle, Entity, Vertex, QUAD_INDICES, QUAD_VERTICES};
+use super::{BufferBundle, Entity, Vertex, QUAD_INDICES, QUAD_VERTICES, Window};
 
 pub const VERTEX_SOURCE: &str = include_str!("shaders/vert_default.vert");
 pub const FRAGMENT_SOURCE: &str = include_str!("shaders/frag_default.frag");
@@ -79,17 +79,17 @@ pub struct Renderer<I: Instance> {
 
 pub type TypedRenderer = Renderer<back::Instance>;
 impl<I: Instance> Renderer<I> {
-    pub fn typed_new(window: &Window, window_name: &str) -> Result<TypedRenderer, &'static str> {
+    pub fn typed_new(window: &Window) -> Result<TypedRenderer, &'static str> {
         // Create An Instance
-        let instance = back::Instance::create(window_name, 1);
+        let instance = back::Instance::create(window.name, 1);
         // Create A Surface
-        let surface = instance.create_surface(window);
+        let surface = instance.create_surface(&window.window);
         // Create A renderer
-        Ok(TypedRenderer::new(window, instance, surface)?)
+        Ok(TypedRenderer::new(&window.window, instance, surface)?)
     }
 
     pub fn new(
-        window: &Window,
+        window: &WinitWindow,
         instance: I,
         mut surface: <I::Backend as Backend>::Surface,
     ) -> Result<Self, &'static str> {
@@ -538,65 +538,6 @@ impl<I: Instance> Renderer<I> {
         Ok(())
     }
 
-    pub fn draw_clear_frame(&mut self, color: [f32; 4]) -> Result<Option<Suboptimal>, &'static str> {
-        // SETUP FOR THIS FRAME
-        let image_available = &self.image_available_semaphores[self.current_frame];
-        let render_finished = &self.render_finished_semaphores[self.current_frame];
-        // Advance the frame _before_ we start using the `?` operator
-        self.current_frame = (self.current_frame + 1) % self.frames_in_flight;
-
-        let (i_u32, i_usize) = unsafe {
-            let image_index = self
-                .swapchain
-                .acquire_image(core::u64::MAX, Some(image_available), None)
-                .map_err(|_| "Couldn't acquire an image from the swapchain!")?;
-            (image_index.0, image_index.0 as usize)
-        };
-        let flight_fence = &self.in_flight_fences[i_usize];
-
-        unsafe {
-            self.device
-                .wait_for_fence(flight_fence, core::u64::MAX)
-                .map_err(|_| "Failed to wait on the fence!")?;
-            self.device
-                .reset_fence(flight_fence)
-                .map_err(|_| "Couldn't reset the fence!")?;
-        }
-
-        // RECORD COMMANDS
-        unsafe {
-            let buffer = &mut self.command_buffers[i_usize];
-            let clear_values = [ClearValue::Color(ClearColor::Sfloat(color))];
-            buffer.begin(false);
-            buffer.begin_render_pass_inline(
-                &self.render_pass,
-                &self.framebuffers[i_usize],
-                self.viewport,
-                clear_values.iter(),
-            );
-            buffer.finish();
-        }
-
-        // SUBMISSION AND PRESENT
-        let command_buffers = &self.command_buffers[i_usize..=i_usize];
-        let wait_semaphores: ArrayVec<[_; 1]> = [(image_available, PipelineStage::COLOR_ATTACHMENT_OUTPUT)].into();
-        let signal_semaphores: ArrayVec<[_; 1]> = [render_finished].into();
-        // yes, you have to write it twice like this. yes, it's silly.
-        let present_wait_semaphores: ArrayVec<[_; 1]> = [render_finished].into();
-        let submission = Submission {
-            command_buffers,
-            wait_semaphores,
-            signal_semaphores,
-        };
-        let the_command_queue = &mut self.queue_group.queues[0];
-        unsafe {
-            the_command_queue.submit(submission, Some(flight_fence));
-            self.swapchain
-                .present(the_command_queue, i_u32, present_wait_semaphores)
-                .map_err(|_| "Failed to present into the swapchain!")
-        }
-    }
-
     pub fn draw_quad_frame(
         &mut self,
         entities: &[Entity],
@@ -696,7 +637,7 @@ impl<I: Instance> Renderer<I> {
         }
     }
 
-    pub fn recreate_swapchain(&mut self, window: &Window) -> Result<(), &'static str> {
+    pub fn recreate_swapchain(&mut self, window: &WinitWindow) -> Result<(), &'static str> {
         let (caps, formats, _) = self.surface.compatibility(&mut self.adapter.physical_device);
         assert!(formats.iter().any(|fs| fs.contains(&self.format)));
 
