@@ -4,7 +4,7 @@ use super::utilities::{Coord2, Vec2};
 use winit::VirtualKeyCode;
 
 const DEFAULT_SIZE: Vec2 = Vec2 { x: 1920.0, y: 1080.0 };
-const ARRAY_SIZE: Coord2 = Coord2 { x: 11, y: 11 };
+const ARRAY_SIZE: Coord2 = Coord2 { x: 500, y: 500 };
 
 pub struct Game {
     window: Window,
@@ -20,7 +20,7 @@ impl Game {
         let user_input = UserInput::new();
 
         let renderer = TypedRenderer::typed_new(&window)?;
-        let camera = Camera::new_at_position(Vec2::new(0.0, 0.0), -5.0);
+        let camera = Camera::new_at_position(Vec2::new(0.0, 0.0), 5);
 
         // Initialize Entities...
         let mut entities = vec![];
@@ -64,6 +64,13 @@ impl Game {
                 break false;
             }
 
+            // update
+            self.camera.update(
+                &self.user_input.kb_input.held_keys,
+                0.05,
+                self.user_input.mouse_input.mouse_vertical_scroll_delta,
+            );
+
             if self.user_input.mouse_input.mouse_pressed {
                 let world_pos = self.camera.display_to_world_position(
                     self.user_input.mouse_input.mouse_position,
@@ -71,12 +78,12 @@ impl Game {
                 );
 
                 if let Ok(coord_pos) = world_pos.into_raw_usize() {
-                    println!("This Entity is {:?}", self.entities[coord_pos.0][coord_pos.1])
+                    if coord_pos.0 < self.entities.len() && coord_pos.1 < self.entities[0].len() {
+                        self.entities[coord_pos.0][coord_pos.1].flip_state();
+                    }
                 }
             }
 
-            // update
-            self.camera.update(&self.user_input.kb_input.held_keys, 0.05);
             if self
                 .user_input
                 .kb_input
@@ -103,10 +110,8 @@ impl Game {
     fn render(&mut self) -> bool {
         if let Some(renderer) = &mut self.renderer {
             match renderer.draw_quad_frame(
-                &self.entities,
+                &mut self.entities,
                 &self.camera.make_view_projection_mat(),
-                &self.camera.aspect_ratio,
-                &self.camera.scale,
             ) {
                 Ok(sub_optimal) => {
                     if let Some(_) = sub_optimal {

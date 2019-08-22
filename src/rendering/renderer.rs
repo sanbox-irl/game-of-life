@@ -565,10 +565,8 @@ impl<I: Instance> Renderer<I> {
 
     pub fn draw_quad_frame(
         &mut self,
-        entities: &[Vec<Entity>],
+        entities: &mut [Vec<Entity>],
         view_projection: &glm::TMat4<f32>,
-        aspect_ratio: &f32,
-        scale: &f32,
     ) -> Result<Option<Suboptimal>, DrawingError> {
         // SETUP FOR THIS FRAME
         let image_available = &self.image_available_semaphores[self.current_frame];
@@ -623,15 +621,9 @@ impl<I: Instance> Renderer<I> {
                     index_type: IndexType::U16,
                 });
 
-                for row in entities {
-                    for entity in row {
-                        let mvp = {
-                            let position_matrix = glm::scale(
-                                &view_projection,
-                                &glm::make_vec3(&[*scale, scale * aspect_ratio, 1.0]),
-                            );
-                            position_matrix * entity.coordinate.into_vec2().into_glm_tmat4(0.0)
-                        };
+                for row in entities.iter_mut() {
+                    for entity in row.iter_mut() {
+                        let mvp = view_projection * entity.get_coordinate_matrix();
 
                         encoder.push_graphics_constants(
                             &self.pipeline_layout,

@@ -1,8 +1,8 @@
 use super::Vec2;
 use arrayvec::ArrayVec;
 use winit::{
-    DeviceEvent, ElementState, Event, EventsLoop, KeyboardInput as WinitKeyboardInput, MouseButton,
-    MouseScrollDelta, VirtualKeyCode, WindowEvent,
+    DeviceEvent, ElementState, Event, EventsLoop, KeyboardInput as WinitKeyboardInput,
+    MouseButton, MouseScrollDelta, VirtualKeyCode, WindowEvent, dpi::LogicalPosition
 };
 
 #[derive(Debug)]
@@ -78,18 +78,22 @@ impl UserInput {
             }
 
             Event::WindowEvent {
-                event:
-                    WindowEvent::MouseWheel {
-                        delta: MouseScrollDelta::LineDelta(horizontal, vertical),
-                        ..
-                    },
+                event: WindowEvent::MouseWheel {
+                    delta: scroll_delta, ..
+                },
                 ..
-            } => {
-                if mouse_button_clicked_last_frame == false {
-                    self.mouse_input.mouse_pressed = true;
-                    self.mouse_input.mouse_held = true;
+            } => match scroll_delta {
+                MouseScrollDelta::PixelDelta(LogicalPosition {
+                    x: _,
+                    y: vertical_move,
+                }) => {
+                    self.mouse_input.mouse_vertical_scroll_delta = -vertical_move as f32;
                 }
-            }
+
+                MouseScrollDelta::LineDelta(_, vertical_move) => {
+                    self.mouse_input.mouse_vertical_scroll_delta = -vertical_move;
+                }
+            },
 
             Event::WindowEvent {
                 event:
@@ -166,6 +170,7 @@ impl UserInput {
 #[derive(Debug, Default)]
 pub struct MouseInput {
     pub mouse_position: Vec2,
+    pub mouse_vertical_scroll_delta: f32,
     pub mouse_pressed: bool,
     pub mouse_held: bool,
     pub mouse_released: bool,
@@ -176,6 +181,7 @@ impl MouseInput {
         self.mouse_pressed = false;
         self.mouse_held = false;
         self.mouse_released = false;
+        self.mouse_vertical_scroll_delta = 0.0;
     }
 }
 

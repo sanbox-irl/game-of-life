@@ -11,17 +11,20 @@ pub struct Camera {
 }
 
 impl Camera {
-    pub fn new_at_position(position: Vec2, ortho_projection_amount: f32) -> Camera {
+    pub fn new_at_position(position: Vec2, ortho_projection_amount: u32) -> Camera {
+        let ortho_projection_amount = ortho_projection_amount as f32;
+        let aspect_ratio = 16.0 / 9.0;
+        let scale = 0.5;
         Camera {
             position: position.into_glm_vec3(-1.0),
             ortho_projection_amount,
-            ortho_projection: Self::make_projection(ortho_projection_amount),
-            aspect_ratio: 16.0 / 9.0,
-            scale: 0.5,
+            ortho_projection: Self::make_projection(ortho_projection_amount, scale, aspect_ratio),
+            aspect_ratio,
+            scale,
         }
     }
 
-    pub fn update(&mut self, input: &[VirtualKeyCode], distance: f32) {
+    pub fn update(&mut self, input: &[VirtualKeyCode], distance: f32, scroll_delta: f32) {
         let right: glm::TVec3<f32> = glm::make_vec3(&[1.0, 0.0, 0.0]);
         let up: glm::TVec3<f32> = glm::make_vec3(&[0.0, 1.0, 0.0]);
 
@@ -35,7 +38,7 @@ impl Camera {
                 });
 
             if zoom_amount != self.ortho_projection_amount {
-                self.ortho_projection = Self::make_projection(zoom_amount);
+                self.ortho_projection = Self::make_projection(zoom_amount, self.scale, self.aspect_ratio);
                 self.ortho_projection_amount = zoom_amount;
             }
         } else {
@@ -53,6 +56,12 @@ impl Camera {
                 move_vector = move_vector.normalize();
             }
             self.position += move_vector * distance;
+        }
+
+        if scroll_delta != 0.0 {
+            self.ortho_projection_amount = (self.ortho_projection_amount + scroll_delta).max(0.5);
+            self.ortho_projection =
+                Self::make_projection(self.ortho_projection_amount, self.scale, self.aspect_ratio);
         }
     }
 
@@ -82,9 +91,13 @@ impl Camera {
         )
     }
 
-    fn make_projection(size: f32) -> glm::TMat4<f32> {
-        let mut temp = glm::ortho_lh_zo(size, -size, size, -size, 0.1, 10.0);
-        temp[(1, 1)] *= -1.0;
-        temp
+    fn make_projection(size: f32, scale: f32, aspect_ratio: f32) -> glm::TMat4<f32> {
+        let temp = {
+            let mut temp = glm::ortho_lh_zo(-size, size, -size, size, 0.1, 10.0);
+            temp[(1, 1)] *= -1.0;
+            temp
+        };
+
+        glm::scale(&temp, &glm::make_vec3(&[scale, scale * aspect_ratio, 1.0]))
     }
 }
