@@ -1,0 +1,45 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'game_of_life'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=game_of_life",
+                    "--package=game_of_life"
+                ],
+                "filter": {
+                    "name": "game_of_life",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'game_of_life'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=game_of_life",
+                    "--package=game_of_life"
+                ],
+                "filter": {
+                    "name": "game_of_life",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

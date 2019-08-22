@@ -1,11 +1,10 @@
-use super::State;
+use super::{Entity, State};
 
-#[allow(dead_code)]
-pub fn set_rules(current_entities: &[Vec<State>]) -> Vec<Vec<State>> {
-    let mut ret = vec![];
-    for (y, this_row) in current_entities.iter().enumerate() {
+pub fn set_rules(current_entities: &mut [Vec<Entity>]) {
+    let mut ret: Vec<Vec<State>> = vec![];
+    for (x, this_row) in current_entities.iter().enumerate() {
         let mut ret_row = vec![];
-        for (x, entity) in this_row.iter().enumerate() {
+        for (y, entity) in this_row.iter().enumerate() {
             let current_pos = (x, y);
             let mut count = 0;
 
@@ -49,40 +48,53 @@ pub fn set_rules(current_entities: &[Vec<State>]) -> Vec<Vec<State>> {
                 count += 1;
             }
 
-            if entity == &State::Alive {
+            if entity.state == State::Alive {
                 ret_row.push(match count {
                     2..=3 => State::Alive,
                     _ => State::Dead,
                 });
             } else {
-                ret_row.push(if count == 3 { State::Alive } else { State::Dead });
+                ret_row.push(if count == 3 {
+                    State::Alive
+                } else {
+                    if entity.state == State::Dead {
+                        State::Dead
+                    } else {
+                        State::Unborn
+                    }
+                });
             }
         }
         ret.push(ret_row);
     }
-    ret
+
+    for (x, this_row) in current_entities.iter_mut().enumerate() {
+        for (y, entity) in this_row.iter_mut().enumerate() {
+            entity.state = ret[x][y];
+        }
+    }
 }
 
 fn entity_is_alive(
-    entities: &[Vec<State>],
+    entities: &[Vec<Entity>],
     current_pos: (usize, usize),
     horizontal_move: Move,
     vertical_move: Move,
 ) -> bool {
     let entity = get_entity(entities, current_pos, horizontal_move, vertical_move);
-    entity == &State::Alive
+    entity.state == State::Alive
 }
 
-fn get_entity(
-    entities: &[Vec<State>],
+fn get_entity<T>(
+    entities: &[Vec<T>],
     current_pos: (usize, usize),
     horizontal_move: Move,
     vertical_move: Move,
-) -> &State {
-    let x = wrap(current_pos.0, horizontal_move, entities[0].len());
-    let y = wrap(current_pos.1, vertical_move.reverse(), entities.len());
+) -> &T {
+    let x = wrap(current_pos.0, horizontal_move, entities.len());
+    let y = wrap(current_pos.1, vertical_move.reverse(), entities[0].len());
 
-    return &entities[y][x];
+    return &entities[x][y];
 }
 
 fn wrap(current: usize, move_amount: Move, wrap_size: usize) -> usize {

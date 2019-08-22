@@ -1,15 +1,16 @@
 use super::Vec2;
 use arrayvec::ArrayVec;
-use winit::{DeviceEvent, ElementState, Event, EventsLoop, KeyboardInput, VirtualKeyCode, WindowEvent};
+use winit::{
+    DeviceEvent, ElementState, Event, EventsLoop, KeyboardInput as WinitKeyboardInput, MouseButton,
+    MouseScrollDelta, VirtualKeyCode, WindowEvent,
+};
 
 #[derive(Debug)]
 pub struct UserInput {
     pub end_requested: bool,
     pub new_frame_size: Option<Vec2>,
-    pub new_mouse_position: Option<Vec2>,
-    pub pressed_keys: ArrayVec<[VirtualKeyCode; 10]>,
-    pub held_keys: ArrayVec<[VirtualKeyCode; 10]>,
-    pub released_keys: ArrayVec<[VirtualKeyCode; 10]>,
+    pub mouse_input: MouseInput,
+    pub kb_input: KeyboardInput,
 }
 
 impl UserInput {
@@ -17,15 +18,14 @@ impl UserInput {
         UserInput {
             end_requested: false,
             new_frame_size: None,
-            new_mouse_position: None,
-            pressed_keys: ArrayVec::new(),
-            held_keys: ArrayVec::new(),
-            released_keys: ArrayVec::new(),
+            mouse_input: MouseInput::default(),
+            kb_input: KeyboardInput::default(),
         }
     }
 
     pub fn poll_events_loop(&mut self, events_loop: &mut EventsLoop) {
-        let keys_pressed_last_frame = self.pressed_keys.clone();
+        let keys_pressed_last_frame = self.kb_input.pressed_keys.clone();
+        let mouse_button_clicked_last_frame = self.mouse_input.mouse_pressed;
         self.clear_input();
 
         events_loop.poll_events(|event| match event {
@@ -47,7 +47,7 @@ impl UserInput {
 
             Event::DeviceEvent {
                 event:
-                    DeviceEvent::Key(KeyboardInput {
+                    DeviceEvent::Key(WinitKeyboardInput {
                         virtual_keycode: Some(code),
                         state,
                         ..
@@ -59,14 +59,60 @@ impl UserInput {
                 event: WindowEvent::CursorMoved { position, .. },
                 ..
             } => {
-                self.new_mouse_position = Some(Vec2::new(position.x as f32, position.y as f32));
+                self.mouse_input.mouse_position = Vec2::new(position.x as f32, position.y as f32);
+            }
+
+            Event::WindowEvent {
+                event:
+                    WindowEvent::MouseInput {
+                        state: ElementState::Pressed,
+                        button: MouseButton::Left,
+                        ..
+                    },
+                ..
+            } => {
+                if mouse_button_clicked_last_frame == false {
+                    self.mouse_input.mouse_pressed = true;
+                    self.mouse_input.mouse_held = true;
+                }
+            }
+
+            Event::WindowEvent {
+                event:
+                    WindowEvent::MouseWheel {
+                        delta: MouseScrollDelta::LineDelta(horizontal, vertical),
+                        ..
+                    },
+                ..
+            } => {
+                if mouse_button_clicked_last_frame == false {
+                    self.mouse_input.mouse_pressed = true;
+                    self.mouse_input.mouse_held = true;
+                }
+            }
+
+            Event::WindowEvent {
+                event:
+                    WindowEvent::MouseInput {
+                        state: ElementState::Released,
+                        button: MouseButton::Left,
+                        ..
+                    },
+                ..
+            } => {
+                if self.mouse_input.mouse_pressed || self.mouse_input.mouse_held {
+                    self.mouse_input.mouse_pressed = false;
+                    self.mouse_input.mouse_held = false;
+
+                    self.mouse_input.mouse_released = true;
+                }
             }
 
             Event::WindowEvent {
                 event:
                     WindowEvent::KeyboardInput {
                         input:
-                            KeyboardInput {
+                            WinitKeyboardInput {
                                 state,
                                 virtual_keycode: Some(code),
                                 ..
@@ -86,29 +132,63 @@ impl UserInput {
     pub fn clear_input(&mut self) {
         self.end_requested = false;
         self.new_frame_size = None;
-        self.new_mouse_position = None;
-        self.pressed_keys.clear();
-        self.released_keys.clear();
+        self.mouse_input.clear();
+        self.kb_input.clear();
     }
 
-    pub fn record_input(&mut self, element_state: ElementState, code: VirtualKeyCode, last_frame_pressed: &[VirtualKeyCode]) {
+    pub fn record_input(
+        &mut self,
+        element_state: ElementState,
+        code: VirtualKeyCode,
+        last_frame_pressed: &[VirtualKeyCode],
+    ) {
         match element_state {
             ElementState::Pressed => {
                 if let None = last_frame_pressed.iter().position(|&pos| pos == code) {
-                    if let None = self.held_keys.iter().position(|&pos| pos == code) {
+                    if let None = self.kb_input.held_keys.iter().position(|&pos| pos == code) {
                         trace!("Pressed key {:?}", code);
-                        self.pressed_keys.push(code);
-                        self.held_keys.push(code);
+                        self.kb_input.pressed_keys.push(code);
+                        self.kb_input.held_keys.push(code);
                     }
                 }
             }
 
             ElementState::Released => {
-                if let Some(vk_pos) = self.held_keys.iter().position(|&item| item == code) {
-                    self.held_keys.remove(vk_pos);
-                    self.released_keys.push(code);
+                if let Some(vk_pos) = self.kb_input.held_keys.iter().position(|&item| item == code) {
+                    self.kb_input.held_keys.remove(vk_pos);
+                    self.kb_input.released_keys.push(code);
                 }
             }
         }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct MouseInput {
+    pub mouse_position: Vec2,
+    pub mouse_pressed: bool,
+    pub mouse_held: bool,
+    pub mouse_released: bool,
+}
+
+impl MouseInput {
+    pub fn clear(&mut self) {
+        self.mouse_pressed = false;
+        self.mouse_held = false;
+        self.mouse_released = false;
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct KeyboardInput {
+    pub pressed_keys: ArrayVec<[VirtualKeyCode; 10]>,
+    pub held_keys: ArrayVec<[VirtualKeyCode; 10]>,
+    pub released_keys: ArrayVec<[VirtualKeyCode; 10]>,
+}
+
+impl KeyboardInput {
+    pub fn clear(&mut self) {
+        self.pressed_keys.clear();
+        self.released_keys.clear();
     }
 }

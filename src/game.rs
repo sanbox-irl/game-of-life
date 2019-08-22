@@ -1,11 +1,10 @@
-use super::ecs::{Camera, Entity, UserInput, Window};
+use super::ecs::{rule_setter, Camera, Entity, State, UserInput, Window};
 use super::rendering::{DrawingError, TypedRenderer};
 use super::utilities::{Coord2, Vec2};
-use nalgebra_glm as glm;
+use winit::VirtualKeyCode;
 
-const DEFAULT_SIZE: Vec2 = Vec2 { x: 1280.0, y: 720.0 };
-
-const ARRAY_SIZE: Coord2 = Coord2 { x: 10, y: 10 };
+const DEFAULT_SIZE: Vec2 = Vec2 { x: 1920.0, y: 1080.0 };
+const ARRAY_SIZE: Coord2 = Coord2 { x: 11, y: 11 };
 
 pub struct Game {
     window: Window,
@@ -21,22 +20,30 @@ impl Game {
         let user_input = UserInput::new();
 
         let renderer = TypedRenderer::typed_new(&window)?;
+        let camera = Camera::new_at_position(Vec2::new(0.0, 0.0), -5.0);
 
-        let camera = Camera::new_at_position(Vec2::new(0.0, 0.0), {
-            let mut temp = glm::ortho_lh_zo(-5.0, 5.0, -5.0, 5.0, 0.1, 10.0);
-            temp[(1, 1)] *= -1.0;
-            temp
-        });
-        
         // Initialize Entities...
         let mut entities = vec![];
-        for y in 0..ARRAY_SIZE.y {
+        for x in 0..ARRAY_SIZE.y {
             let mut this_vec = vec![];
-            for x in 0..ARRAY_SIZE.x {
+            for y in 0..ARRAY_SIZE.x {
                 this_vec.push(Entity::new(Coord2::new(x, y)));
             }
             entities.push(this_vec);
         }
+
+        // Basic test:
+        entities[0][0].state = State::Dead;
+        entities[4][6].state = State::Alive;
+        entities[5][6].state = State::Alive;
+        entities[6][6].state = State::Alive;
+
+        entities[4][5].state = State::Alive;
+        entities[6][5].state = State::Alive;
+
+        entities[4][4].state = State::Alive;
+        entities[5][4].state = State::Alive;
+        entities[6][4].state = State::Alive;
 
         info!("Entities: {:#?}", entities);
 
@@ -57,8 +64,29 @@ impl Game {
                 break false;
             }
 
+            if self.user_input.mouse_input.mouse_pressed {
+                let world_pos = self.camera.display_to_world_position(
+                    self.user_input.mouse_input.mouse_position,
+                    self.window.get_window_size(),
+                );
+
+                if let Ok(coord_pos) = world_pos.into_raw_usize() {
+                    println!("This Entity is {:?}", self.entities[coord_pos.0][coord_pos.1])
+                }
+            }
+
             // update
-            self.camera.update_position(&self.user_input.held_keys, 0.05);
+            self.camera.update(&self.user_input.kb_input.held_keys, 0.05);
+            if self
+                .user_input
+                .kb_input
+                .pressed_keys
+                .iter()
+                .find(|&&key| key == VirtualKeyCode::Return)
+                .is_some()
+            {
+                rule_setter::set_rules(&mut self.entities);
+            }
 
             // render
             if self.render() == false {
@@ -74,7 +102,12 @@ impl Game {
 
     fn render(&mut self) -> bool {
         if let Some(renderer) = &mut self.renderer {
-            match renderer.draw_quad_frame(&self.entities, &self.camera.make_view_matrix()) {
+            match renderer.draw_quad_frame(
+                &self.entities,
+                &self.camera.make_view_projection_mat(),
+                &self.camera.aspect_ratio,
+                &self.camera.scale,
+            ) {
                 Ok(sub_optimal) => {
                     if let Some(_) = sub_optimal {
                         Game::recreate_swapchain(renderer, &self.window)
@@ -118,8 +151,14 @@ impl Game {
     fn handle_window_events(&mut self) -> bool {
         if self.user_input.new_frame_size.is_some() {
             debug!("Window changed size, creating a new swapchain...");
-
             if let Some(renderer) = &mut self.renderer {
+                let new_size = self.user_input.new_frame_size.unwrap();
+                self.camera.aspect_ratio = new_size.x / new_size.y;
+                self.camera.scale = 540.0 / new_size.y;
+
+                info!("New Aspect Ratio is {}", self.camera.aspect_ratio);
+                info!("New Size is {:?}", new_size);
+                info!("New Scale is {}", self.camera.scale);
                 Game::recreate_swapchain(renderer, &self.window)
             } else {
                 false

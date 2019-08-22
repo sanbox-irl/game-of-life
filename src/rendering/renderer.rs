@@ -7,19 +7,20 @@ use gfx_hal::{
     device::Device,
     format::{Aspects, ChannelType, Format, Swizzle},
     image::{Extent, Layout, SubresourceRange, Usage, ViewKind},
-    memory::Pod,
     pass::{Attachment, AttachmentLoadOp, AttachmentOps, AttachmentStoreOp, Subpass, SubpassDesc},
     pool::{CommandPool, CommandPoolCreateFlags},
     pso::{
-        BakedStates, BasePipeline, BlendDesc, BlendOp, BlendState, ColorBlendDesc, ColorMask, DepthStencilDesc,
-        DescriptorSetLayoutBinding, ElemStride, EntryPoint, Face, Factor, FrontFace, GraphicsPipelineDesc,
-        GraphicsShaderSet, InputAssemblerDesc, LogicOp, PipelineCreationFlags, PipelineStage, PolygonMode, Rasterizer,
-        Rect, ShaderStageFlags, Specialization, VertexBufferDesc, VertexInputRate, Viewport,
+        BakedStates, BasePipeline, BlendDesc, BlendOp, BlendState, ColorBlendDesc, ColorMask,
+        DepthStencilDesc, DescriptorSetLayoutBinding, ElemStride, EntryPoint, Face, Factor, FrontFace,
+        GraphicsPipelineDesc, GraphicsShaderSet, InputAssemblerDesc, LogicOp, PipelineCreationFlags,
+        PipelineStage, PolygonMode, Rasterizer, Rect, ShaderStageFlags, Specialization, VertexBufferDesc,
+        VertexInputRate, Viewport,
     },
     queue::{family::QueueGroup, Submission},
     window::{Extent2D, PresentMode, Suboptimal, Surface, Swapchain, SwapchainConfig},
     Backend, Features, Gpu, Graphics, IndexType, Instance, Primitive, QueueFamily,
 };
+use lokacore;
 use nalgebra_glm as glm;
 use std::{borrow::Cow, mem, ops::Deref};
 use winit::Window as WinitWindow;
@@ -156,7 +157,10 @@ impl<I: Instance> Renderer<I> {
                     .cloned()
                 {
                     Some(srgb_format) => srgb_format,
-                    None => formats.get(0).cloned().ok_or("Preferred format list was empty!")?,
+                    None => formats
+                        .get(0)
+                        .cloned()
+                        .ok_or("Preferred format list was empty!")?,
                 },
             };
 
@@ -212,13 +216,27 @@ impl<I: Instance> Renderer<I> {
             let mut render_finished_semaphores = vec![];
             let mut in_flight_fences = vec![];
             for _ in 0..frames_in_flight {
-                in_flight_fences.push(device.create_fence(true).map_err(|_| "Could not create a fence!")?);
-                image_available_semaphores
-                    .push(device.create_semaphore().map_err(|_| "Could not create a semaphore!")?);
-                render_finished_semaphores
-                    .push(device.create_semaphore().map_err(|_| "Could not create a semaphore!")?);
+                in_flight_fences.push(
+                    device
+                        .create_fence(true)
+                        .map_err(|_| "Could not create a fence!")?,
+                );
+                image_available_semaphores.push(
+                    device
+                        .create_semaphore()
+                        .map_err(|_| "Could not create a semaphore!")?,
+                );
+                render_finished_semaphores.push(
+                    device
+                        .create_semaphore()
+                        .map_err(|_| "Could not create a semaphore!")?,
+                );
             }
-            (image_available_semaphores, render_finished_semaphores, in_flight_fences)
+            (
+                image_available_semaphores,
+                render_finished_semaphores,
+                in_flight_fences,
+            )
         };
 
         let render_pass = {
@@ -360,7 +378,13 @@ impl<I: Instance> Renderer<I> {
     > {
         let mut compiler = shaderc::Compiler::new().ok_or("shaderc not found!")?;
         let vertex_compile_artifact = compiler
-            .compile_into_spirv(VERTEX_SOURCE, shaderc::ShaderKind::Vertex, "vertex.vert", "main", None)
+            .compile_into_spirv(
+                VERTEX_SOURCE,
+                shaderc::ShaderKind::Vertex,
+                "vertex.vert",
+                "main",
+                None,
+            )
             .map_err(|_| "Couldn't compile vertex shader!")?;
 
         let fragment_compile_artifact = compiler
@@ -480,7 +504,8 @@ impl<I: Instance> Renderer<I> {
         }];
 
         let push_constants = vec![
-            (ShaderStageFlags::VERTEX, 0..16), /*(ShaderStageFlags::FRAGMENT, 0..1)*/
+            (ShaderStageFlags::VERTEX, 0..16),
+            (ShaderStageFlags::FRAGMENT, 0..3),
         ];
         let layout = unsafe {
             device
@@ -542,6 +567,8 @@ impl<I: Instance> Renderer<I> {
         &mut self,
         entities: &[Vec<Entity>],
         view_projection: &glm::TMat4<f32>,
+        aspect_ratio: &f32,
+        scale: &f32,
     ) -> Result<Option<Suboptimal>, DrawingError> {
         // SETUP FOR THIS FRAME
         let image_available = &self.image_available_semaphores[self.current_frame];
@@ -572,7 +599,12 @@ impl<I: Instance> Renderer<I> {
         // RECORD COMMANDS
         unsafe {
             let buffer = &mut self.command_buffers[i_usize];
-            const TRIANGLE_CLEAR: [ClearValue; 1] = [ClearValue::Color(ClearColor::Sfloat([0.1, 0.2, 0.3, 1.0]))];
+            const TRIANGLE_CLEAR: [ClearValue; 1] = [ClearValue::Color(ClearColor::Sfloat([
+                139.0 / 255.0,
+                110.0 / 255.0,
+                101.0 / 255.0,
+                1.0,
+            ]))];
             buffer.begin(false);
             {
                 let mut encoder = buffer.begin_render_pass_inline(
@@ -594,21 +626,25 @@ impl<I: Instance> Renderer<I> {
                 for row in entities {
                     for entity in row {
                         let mvp = {
-                            let position_matrix = view_projection * entity.coordinate.into_vec2().into_glm_tmat4(0.0);
-                            glm::scale(&position_matrix, &glm::make_vec3(&[1.0, 16.0 / 9.0, 1.0]))
+                            let position_matrix = glm::scale(
+                                &view_projection,
+                                &glm::make_vec3(&[*scale, scale * aspect_ratio, 1.0]),
+                            );
+                            position_matrix * entity.coordinate.into_vec2().into_glm_tmat4(0.0)
                         };
 
-                        // todo write the colors here...
-
-                        // send off the projection to the vert shad
                         encoder.push_graphics_constants(
                             &self.pipeline_layout,
                             ShaderStageFlags::VERTEX,
                             0,
-                            cast_slice::<f32, u32>(&mvp.data)
-                                .expect("this cast never fails for same-aligned same-size data"),
+                            lokacore::cast_slice::<f32, u32>(&mvp.data),
                         );
-
+                        encoder.push_graphics_constants(
+                            &self.pipeline_layout,
+                            ShaderStageFlags::FRAGMENT,
+                            0,
+                            &entity.state.to_color_bits(),
+                        );
                         encoder.draw_indexed(0..6, 0, 0..1);
                     }
                 }
@@ -618,7 +654,8 @@ impl<I: Instance> Renderer<I> {
 
         // SUBMISSION AND PRESENT
         let command_buffers = &self.command_buffers[i_usize..=i_usize];
-        let wait_semaphores: ArrayVec<[_; 1]> = [(image_available, PipelineStage::COLOR_ATTACHMENT_OUTPUT)].into();
+        let wait_semaphores: ArrayVec<[_; 1]> =
+            [(image_available, PipelineStage::COLOR_ATTACHMENT_OUTPUT)].into();
         let signal_semaphores: ArrayVec<[_; 1]> = [render_finished].into();
         // yes, you have to write it twice like this. yes, it's silly.
         let present_wait_semaphores: ArrayVec<[_; 1]> = [render_finished].into();
@@ -744,7 +781,8 @@ impl<I: Instance> Renderer<I> {
             for this_layout in self.descriptor_set_layouts.drain(..) {
                 self.device.destroy_descriptor_set_layout(this_layout);
             }
-            self.device.destroy_pipeline_layout(manual_drop!(self.pipeline_layout));
+            self.device
+                .destroy_pipeline_layout(manual_drop!(self.pipeline_layout));
             self.device
                 .destroy_graphics_pipeline(manual_drop!(self.graphics_pipeline));
 
@@ -786,7 +824,8 @@ impl<I: Instance> core::ops::Drop for Renderer<I> {
             self.vertices.manually_drop(&self.device);
             self.indexes.manually_drop(&self.device);
 
-            self.device.destroy_pipeline_layout(manual_drop!(self.pipeline_layout));
+            self.device
+                .destroy_pipeline_layout(manual_drop!(self.pipeline_layout));
             self.device
                 .destroy_graphics_pipeline(manual_drop!(self.graphics_pipeline));
             self.device
@@ -796,40 +835,6 @@ impl<I: Instance> core::ops::Drop for Renderer<I> {
 
             ManuallyDrop::drop(&mut self.device);
             ManuallyDrop::drop(&mut self.instance);
-        }
-    }
-}
-
-pub fn cast_slice<T: Pod, U: Pod>(ts: &[T]) -> Option<&[U]> {
-    use core::mem::align_of;
-    // Handle ZST (this all const folds)
-    if mem::size_of::<T>() == 0 || mem::size_of::<U>() == 0 {
-        if mem::size_of::<T>() == mem::size_of::<U>() {
-            unsafe {
-                return Some(core::slice::from_raw_parts(ts.as_ptr() as *const U, ts.len()));
-            }
-        } else {
-            return None;
-        }
-    }
-    // Handle alignments (this const folds)
-    if align_of::<U>() > align_of::<T>() {
-        // possible mis-alignment at the new type (this is a real runtime check)
-        if (ts.as_ptr() as usize) % align_of::<U>() != 0 {
-            return None;
-        }
-    }
-    if mem::size_of::<T>() == mem::size_of::<U>() {
-        // same size, so we direct cast, keeping the old length
-        unsafe { Some(core::slice::from_raw_parts(ts.as_ptr() as *const U, ts.len())) }
-    } else {
-        // we might have slop, which would cause us to fail
-        let byte_size = mem::size_of::<T>() * ts.len();
-        let (new_count, new_overflow) = (byte_size / mem::size_of::<U>(), byte_size % mem::size_of::<U>());
-        if new_overflow > 0 {
-            return None;
-        } else {
-            unsafe { Some(core::slice::from_raw_parts(ts.as_ptr() as *const U, new_count)) }
         }
     }
 }

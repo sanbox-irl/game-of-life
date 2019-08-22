@@ -29,15 +29,15 @@ impl Vertex {
                 offset: mem::size_of::<[f32; 3]>() as ElemOffset,
             },
         };
-        // let color_attribute = AttributeDesc {
-        //     location: 2,
-        //     binding: 0,
-        //     element: Element {
-        //         format: Format::Rgb32Sfloat,
-        //         offset: mem::size_of::<[f32; 5]>() as ElemOffset,
-        //     },
-        // };
-        vec![position_attribute, uv_attribute, /* color_attribute */]
+        let color_attribute = AttributeDesc {
+            location: 2,
+            binding: 0,
+            element: Element {
+                format: Format::Rgb32Sfloat,
+                offset: mem::size_of::<[f32; 5]>() as ElemOffset,
+            },
+        };
+        vec![position_attribute, uv_attribute, color_attribute]
     }
 }
 
