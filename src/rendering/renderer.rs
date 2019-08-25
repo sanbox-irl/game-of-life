@@ -693,12 +693,12 @@ impl<I: Instance> Renderer<I> {
         let swapchain_config = gfx_hal::window::SwapchainConfig::from_caps(&caps, self.format, extent);
 
         unsafe {
+            self.drop_swapchain()?;
             let (swapchain, backbuffer) = self
                 .device
                 .create_swapchain(&mut self.surface, swapchain_config, None)
                 .map_err(|_| "Couldn't recreate the swapchain!")?;
 
-            self.drop_swapchain()?;
 
             let image_views = {
                 backbuffer

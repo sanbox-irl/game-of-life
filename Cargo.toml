@@ -5,7 +5,7 @@ authors = ["jjspira"]
 edition = "2018"
 
 [features]
-default = ["metal"]
+default = ["vulkan"]
 metal = ["gfx-backend-metal"]
 dx12 = ["gfx-backend-dx12"]
 vulkan = ["gfx-backend-vulkan"]
