@@ -1,6 +1,7 @@
 #version 450
 layout (push_constant) uniform PushConsts {
-    mat4 mvp;
+    mat4 vp;
+    mat4 world_position;
 } push;
 
 layout (location = 0) in vec3 position;
@@ -15,7 +16,9 @@ layout (location = 1) out vec2 frag_uv;
 layout (location = 2) out vec3 frag_color;
 
 void main() {
-    gl_Position = push.mvp * vec4(position, 1.0);
+    mat4 mvp = push.vp * push.world_position;
+    vec4 object_space_pos = vec4(position, 1.0);
+    gl_Position = mvp * object_space_pos;
     frag_uv = vert_uv;
     frag_color = color;
 }

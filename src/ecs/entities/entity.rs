@@ -5,7 +5,7 @@ use nalgebra_glm as glm;
 pub struct Entity {
     pub coordinate: Coord2,
     pub state: State,
-    matrix: Option<glm::TMat4<f32>>,
+    pub matrix: glm::TMat4<f32>,
 }
 
 impl Entity {
@@ -13,7 +13,7 @@ impl Entity {
         Entity {
             coordinate,
             state: State::Unborn,
-            matrix: None
+            matrix: coordinate.into_vec2().into_glm_tmat4(0.0)
         }
     }
 
@@ -24,17 +24,6 @@ impl Entity {
         };
 
         self.state = new_state;
-    }
-
-    pub fn get_coordinate_matrix(&mut self) -> glm::TMat4<f32> {
-        match self.matrix {
-            Some(mat) => mat,
-            None => {
-                let mat = self.coordinate.into_vec2().into_glm_tmat4(0.0);
-                self.matrix = Some(mat);
-                mat
-            }
-        }
     }
 }
 

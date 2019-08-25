@@ -47,6 +47,10 @@ impl Vec2 {
             Ok((self.x as usize, self.y as usize))
         }
     }
+
+    pub fn into_bits(self) -> [u32; 2] {
+        [self.x.to_bits(), self.y.to_bits()]
+    }
 }
 
 impl Display for Vec2 {

@@ -2,9 +2,13 @@ use super::ecs::{rule_setter, Camera, Entity, State, UserInput, Window};
 use super::rendering::{DrawingError, TypedRenderer};
 use super::utilities::{Coord2, Vec2};
 use winit::VirtualKeyCode;
+use std::time::Instant;
 
 const DEFAULT_SIZE: Vec2 = Vec2 { x: 1920.0, y: 1080.0 };
 const ARRAY_SIZE: Coord2 = Coord2 { x: 500, y: 500 };
+
+//  JACK WE'RE HERE. WHY DOESN'T 1-1 APPEAR BUT 2-2+ DOES APPEAR?
+// DEBUG AND CHECK THE MATRICES
 
 pub struct Game {
     window: Window,
@@ -34,16 +38,16 @@ impl Game {
 
         // Basic test:
         entities[0][0].state = State::Dead;
-        entities[4][6].state = State::Alive;
-        entities[5][6].state = State::Alive;
-        entities[6][6].state = State::Alive;
+        // entities[4][6].state = State::Alive;
+        // entities[5][6].state = State::Alive;
+        // entities[6][6].state = State::Alive;
 
-        entities[4][5].state = State::Alive;
-        entities[6][5].state = State::Alive;
+        // entities[4][5].state = State::Alive;
+        // entities[6][5].state = State::Alive;
 
-        entities[4][4].state = State::Alive;
-        entities[5][4].state = State::Alive;
-        entities[6][4].state = State::Alive;
+        // entities[4][4].state = State::Alive;
+        // entities[5][4].state = State::Alive;
+        // entities[6][4].state = State::Alive;
 
         info!("Entities: {:#?}", entities);
 
@@ -57,6 +61,8 @@ impl Game {
     }
 
     pub fn main_loop(&mut self) -> bool {
+        let mut time = Instant::now();
+
         loop {
             // get input
             self.user_input.poll_events_loop(&mut self.window.events_loop);
@@ -99,6 +105,13 @@ impl Game {
             if self.render() == false {
                 self.renderer = None;
                 break false;
+            }
+
+            {
+                let new_time = Instant::now();
+                let difference = new_time.duration_since(time);
+                println!("Time difference is {}", difference.as_secs() as f32 + difference.subsec_nanos() as f32 * 1e-9);
+                time = new_time;
             }
 
             if self.user_input.end_requested {

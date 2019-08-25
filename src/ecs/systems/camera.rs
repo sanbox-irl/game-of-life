@@ -86,8 +86,8 @@ impl Camera {
             glm::inverse(&self.make_view_projection_mat()) * clip_space.into_glm_tmat4(0.0);
 
         Vec2::new(
-            reverse_view_projection[12] * 1.0 / self.scale,
-            reverse_view_projection[13] * 1.0 / (self.scale * self.aspect_ratio),
+            reverse_view_projection[12],
+            reverse_view_projection[13],
         )
     }
 

@@ -505,6 +505,7 @@ impl<I: Instance> Renderer<I> {
 
         let push_constants = vec![
             (ShaderStageFlags::VERTEX, 0..16),
+            (ShaderStageFlags::VERTEX, 16..32),
             (ShaderStageFlags::FRAGMENT, 0..3),
         ];
         let layout = unsafe {
@@ -623,14 +624,20 @@ impl<I: Instance> Renderer<I> {
 
                 for row in entities.iter_mut() {
                     for entity in row.iter_mut() {
-                        let mvp = view_projection * entity.get_coordinate_matrix();
-
                         encoder.push_graphics_constants(
                             &self.pipeline_layout,
                             ShaderStageFlags::VERTEX,
                             0,
-                            lokacore::cast_slice::<f32, u32>(&mvp.data),
+                            lokacore::cast_slice::<f32, u32>(&view_projection.data),
                         );
+                        
+                        encoder.push_graphics_constants(
+                            &self.pipeline_layout,
+                            ShaderStageFlags::VERTEX,
+                            (mem::size_of::<f32>() * 16) as u32,
+                            lokacore::cast_slice::<f32, u32>(&entity.matrix.data),
+                        );
+
                         encoder.push_graphics_constants(
                             &self.pipeline_layout,
                             ShaderStageFlags::FRAGMENT,
