@@ -5,7 +5,7 @@ use winit::VirtualKeyCode;
 use std::time::Instant;
 
 const DEFAULT_SIZE: Vec2 = Vec2 { x: 1920.0, y: 1080.0 };
-const ARRAY_SIZE: Coord2 = Coord2 { x: 500, y: 500 };
+const ARRAY_SIZE: Coord2 = Coord2 { x: 100, y: 100 };
 
 //  JACK WE'RE HERE. WHY DOESN'T 1-1 APPEAR BUT 2-2+ DOES APPEAR?
 // DEBUG AND CHECK THE MATRICES
