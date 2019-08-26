@@ -32,8 +32,12 @@ use gfx_backend_vulkan as back;
 
 use super::{BufferBundle, Entity, Vec2, Vertex, Window, QUAD_INDICES, QUAD_VERTICES};
 
-pub const VERTEX_SOURCE: &str = include_str!("shaders/vert_default.vert");
-pub const FRAGMENT_SOURCE: &str = include_str!("shaders/frag_default.frag");
+const VERTEX_SOURCE: &'static str = include_str!("shaders/vert_default.vert");
+const FRAGMENT_SOURCE: &'static str = include_str!("shaders/frag_default.frag");
+
+const VERTEX_PUSH_CONSTANTS_SIZE: u32 = 6;
+const FRAG_PUSH_CONSTANTS_START: u32 = 8;
+const FRAG_PUSH_CONSTANTS_SIZE: u32 = 3;
 
 #[allow(dead_code)]
 pub struct Renderer<I: Instance> {
@@ -505,10 +509,11 @@ impl<I: Instance> Renderer<I> {
         }];
 
         let push_constants = vec![
-            (ShaderStageFlags::VERTEX, 0..2), // world pos
-            (ShaderStageFlags::VERTEX, 2..4), // camera pos
-            (ShaderStageFlags::VERTEX, 4..6), // [camera_scale, camera_aspect_ratio]
-            (ShaderStageFlags::FRAGMENT, 0..3),
+            (ShaderStageFlags::VERTEX, 0..VERTEX_PUSH_CONSTANTS_SIZE),
+            (
+                ShaderStageFlags::FRAGMENT,
+                FRAG_PUSH_CONSTANTS_START..FRAG_PUSH_CONSTANTS_START + FRAG_PUSH_CONSTANTS_SIZE,
+            ),
         ];
         let layout = unsafe {
             device
@@ -626,38 +631,33 @@ impl<I: Instance> Renderer<I> {
                     index_type: IndexType::U16,
                 });
 
-                let camera_pos_in_bits = camera_position.into_bits();
-                let camera_scale_aspect_ratio = [camera_scale.to_bits(), aspect_ratio.to_bits()];
+                let mut push_constants: [u32; VERTEX_PUSH_CONSTANTS_SIZE as usize] =
+                    [0; VERTEX_PUSH_CONSTANTS_SIZE as usize];
+                push_constants[2] = camera_position.x.to_bits();
+                push_constants[3] = camera_position.y.to_bits();
+                push_constants[4] = camera_scale.to_bits();
+                push_constants[5] = aspect_ratio.to_bits();
 
                 for row in entities.iter_mut() {
                     for entity in row.iter_mut() {
+                        let bits = entity.position.to_bits();
+                        push_constants[0] = bits[0];
+                        push_constants[1] = bits[1];
+
                         encoder.push_graphics_constants(
                             &self.pipeline_layout,
                             ShaderStageFlags::VERTEX,
                             0,
-                            &camera_pos_in_bits,
-                        );
-
-                        encoder.push_graphics_constants(
-                            &self.pipeline_layout,
-                            ShaderStageFlags::VERTEX,
-                            (mem::size_of::<f32>() * 2) as u32,
-                            &entity.coordinate.into_bits(),
-                        );
-
-                        encoder.push_graphics_constants(
-                            &self.pipeline_layout,
-                            ShaderStageFlags::VERTEX,
-                            (mem::size_of::<f32>() * 4) as u32,
-                            &camera_scale_aspect_ratio,
+                            &push_constants,
                         );
 
                         encoder.push_graphics_constants(
                             &self.pipeline_layout,
                             ShaderStageFlags::FRAGMENT,
-                            0,
+                            mem::size_of::<u32>() as u32 * FRAG_PUSH_CONSTANTS_START,
                             &entity.state.to_color_bits(),
                         );
+
                         encoder.draw_indexed(0..6, 0, 0..1);
                     }
                 }

@@ -1,6 +1,6 @@
 #version 450
-layout (push_constant) uniform PushConsts {
-    vec3 color;
+layout (push_constant) uniform FragPushConsts {
+    layout(offset=32) vec3 color;
 } push;
 
 layout (location = 1) in vec2 uv;

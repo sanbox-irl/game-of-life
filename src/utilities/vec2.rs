@@ -48,7 +48,7 @@ impl Vec2 {
     }
 
     #[allow(dead_code)]
-    pub fn into_bits(self) -> [u32; 2] {
+    pub fn to_bits(self) -> [u32; 2] {
         [self.x.to_bits(), self.y.to_bits()]
     }
 }

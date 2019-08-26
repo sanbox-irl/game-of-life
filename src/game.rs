@@ -4,8 +4,8 @@ use super::utilities::{Vec2, Vec2Int};
 use std::time::Instant;
 use winit::VirtualKeyCode;
 
-const DEFAULT_SIZE: Vec2 = Vec2 { x: 1920.0, y: 1080.0 };
-const ARRAY_SIZE: Vec2Int = Vec2Int { x: 50, y: 50 };
+const DEFAULT_SIZE: Vec2 = Vec2 { x: 1280.0, y: 720.0 };
+const ARRAY_SIZE: Vec2Int = Vec2Int { x: 11, y: 11 };
 
 pub struct Game {
     window: Window,
@@ -21,7 +21,7 @@ impl Game {
         let user_input = UserInput::new();
 
         let renderer = TypedRenderer::typed_new(&window)?;
-        let camera = Camera::new_at_position(Vec2::new(0.0, 0.0), 2);
+        let camera = Camera::new_at_position(Vec2::new(0.0, 0.0), 1.0);
 
         // Initialize Entities...
         let mut entities = vec![];
@@ -35,16 +35,16 @@ impl Game {
 
         // Basic test:
         entities[0][0].state = State::Dead;
-        // entities[4][6].state = State::Alive;
-        // entities[5][6].state = State::Alive;
-        // entities[6][6].state = State::Alive;
+        entities[4][6].state = State::Alive;
+        entities[5][6].state = State::Alive;
+        entities[6][6].state = State::Alive;
 
-        // entities[4][5].state = State::Alive;
-        // entities[6][5].state = State::Alive;
+        entities[4][5].state = State::Alive;
+        entities[6][5].state = State::Alive;
 
-        // entities[4][4].state = State::Alive;
-        // entities[5][4].state = State::Alive;
-        // entities[6][4].state = State::Alive;
+        entities[4][4].state = State::Alive;
+        entities[5][4].state = State::Alive;
+        entities[6][4].state = State::Alive;
 
         trace!("Entities: {:#?}", entities);
 
@@ -80,6 +80,9 @@ impl Game {
                     self.user_input.mouse_input.mouse_position,
                     self.window.get_window_size(),
                 );
+
+                info!("World Pos is {}", world_pos);
+                info!("--");
 
                 if let Ok(coord_pos) = world_pos.into_raw_usize() {
                     if coords_pressed.contains(&coord_pos) == false
@@ -134,7 +137,7 @@ impl Game {
             match renderer.draw_quad_frame(
                 &mut self.entities,
                 &self.camera.position,
-                self.camera.ortho_projection_amount,
+                self.camera.scale,
                 self.camera.aspect_ratio,
             ) {
                 Ok(sub_optimal) => {
@@ -183,11 +186,9 @@ impl Game {
             if let Some(renderer) = &mut self.renderer {
                 let new_size = self.user_input.new_frame_size.unwrap();
                 self.camera.aspect_ratio = new_size.x / new_size.y;
-                self.camera.scale = 540.0 / new_size.y;
 
                 info!("New Aspect Ratio is {}", self.camera.aspect_ratio);
                 info!("New Size is {:?}", new_size);
-                info!("New Scale is {}", self.camera.scale);
                 Game::recreate_swapchain(renderer, &self.window)
             } else {
                 false

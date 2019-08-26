@@ -31,8 +31,7 @@ impl Window {
         let window_client_area = self
             .window
             .get_inner_size()
-            .unwrap()
-            .to_physical(self.window.get_hidpi_factor());
+            .unwrap();
 
         Vec2::new(window_client_area.width as f32, window_client_area.height as f32)
     }

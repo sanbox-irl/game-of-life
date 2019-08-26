@@ -2,14 +2,14 @@ use super::{Color, Vec2};
 
 #[derive(Debug)]
 pub struct Entity {
-    pub coordinate: Vec2,
+    pub position: Vec2,
     pub state: State,
 }
 
 impl Entity {
-    pub fn new(coordinate: Vec2) -> Self {
+    pub fn new(position: Vec2) -> Self {
         Entity {
-            coordinate,
+            position,
             state: State::Unborn,
         }
     }
