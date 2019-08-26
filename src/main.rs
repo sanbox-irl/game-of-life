@@ -3,6 +3,7 @@ extern crate winit;
 #[macro_use]
 extern crate log;
 extern crate gfx_hal;
+extern crate imgui;
 
 mod ecs;
 mod game;

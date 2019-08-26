@@ -22,6 +22,7 @@ bitflags = "1.1.0"
 lyon = "0.14.1"
 lokacore = "0.2.0"
 palette = "0.4.1"
+imgui = "0.1.0"
 
 [dependencies.gfx-backend-vulkan]
 version = "0.3"
