@@ -1,8 +1,8 @@
 use super::Vec2;
 use arrayvec::ArrayVec;
 use winit::{
-    DeviceEvent, ElementState, Event, EventsLoop, KeyboardInput as WinitKeyboardInput,
-    MouseButton, MouseScrollDelta, VirtualKeyCode, WindowEvent, dpi::LogicalPosition
+    dpi::LogicalPosition, DeviceEvent, ElementState, Event, EventsLoop, KeyboardInput as WinitKeyboardInput,
+    MouseButton, MouseScrollDelta, VirtualKeyCode, WindowEvent,
 };
 
 #[derive(Debug)]
@@ -78,6 +78,23 @@ impl UserInput {
             }
 
             Event::WindowEvent {
+                event:
+                    WindowEvent::MouseInput {
+                        state: ElementState::Released,
+                        button: MouseButton::Left,
+                        ..
+                    },
+                ..
+            } => {
+                if self.mouse_input.mouse_pressed || self.mouse_input.mouse_held {
+                    self.mouse_input.mouse_pressed = false;
+                    self.mouse_input.mouse_held = false;
+
+                    self.mouse_input.mouse_released = true;
+                }
+            }
+
+            Event::WindowEvent {
                 event: WindowEvent::MouseWheel {
                     delta: scroll_delta, ..
                 },
@@ -94,23 +111,6 @@ impl UserInput {
                     self.mouse_input.mouse_vertical_scroll_delta = -vertical_move;
                 }
             },
-
-            Event::WindowEvent {
-                event:
-                    WindowEvent::MouseInput {
-                        state: ElementState::Released,
-                        button: MouseButton::Left,
-                        ..
-                    },
-                ..
-            } => {
-                if self.mouse_input.mouse_pressed || self.mouse_input.mouse_held {
-                    self.mouse_input.mouse_pressed = false;
-                    self.mouse_input.mouse_held = false;
-
-                    self.mouse_input.mouse_released = true;
-                }
-            }
 
             Event::WindowEvent {
                 event:
@@ -179,7 +179,6 @@ pub struct MouseInput {
 impl MouseInput {
     pub fn clear(&mut self) {
         self.mouse_pressed = false;
-        self.mouse_held = false;
         self.mouse_released = false;
         self.mouse_vertical_scroll_delta = 0.0;
     }

@@ -1,14 +1,11 @@
 use super::ecs::{rule_setter, Camera, Entity, State, UserInput, Window};
 use super::rendering::{DrawingError, TypedRenderer};
-use super::utilities::{Coord2, Vec2};
-use winit::VirtualKeyCode;
+use super::utilities::{Vec2, Vec2Int};
 use std::time::Instant;
+use winit::VirtualKeyCode;
 
 const DEFAULT_SIZE: Vec2 = Vec2 { x: 1920.0, y: 1080.0 };
-const ARRAY_SIZE: Coord2 = Coord2 { x: 100, y: 100 };
-
-//  JACK WE'RE HERE. WHY DOESN'T 1-1 APPEAR BUT 2-2+ DOES APPEAR?
-// DEBUG AND CHECK THE MATRICES
+const ARRAY_SIZE: Vec2Int = Vec2Int { x: 50, y: 50 };
 
 pub struct Game {
     window: Window,
@@ -24,14 +21,14 @@ impl Game {
         let user_input = UserInput::new();
 
         let renderer = TypedRenderer::typed_new(&window)?;
-        let camera = Camera::new_at_position(Vec2::new(0.0, 0.0), 5);
+        let camera = Camera::new_at_position(Vec2::new(0.0, 0.0), 2);
 
         // Initialize Entities...
         let mut entities = vec![];
-        for x in 0..ARRAY_SIZE.y {
+        for x in 0..ARRAY_SIZE.x {
             let mut this_vec = vec![];
-            for y in 0..ARRAY_SIZE.x {
-                this_vec.push(Entity::new(Coord2::new(x, y)));
+            for y in 0..ARRAY_SIZE.y {
+                this_vec.push(Entity::new(Vec2::new(x as f32, y as f32)));
             }
             entities.push(this_vec);
         }
@@ -49,7 +46,7 @@ impl Game {
         // entities[5][4].state = State::Alive;
         // entities[6][4].state = State::Alive;
 
-        info!("Entities: {:#?}", entities);
+        trace!("Entities: {:#?}", entities);
 
         Ok(Game {
             window,
@@ -62,6 +59,7 @@ impl Game {
 
     pub fn main_loop(&mut self) -> bool {
         let mut time = Instant::now();
+        let mut coords_pressed = vec![];
 
         loop {
             // get input
@@ -77,17 +75,25 @@ impl Game {
                 self.user_input.mouse_input.mouse_vertical_scroll_delta,
             );
 
-            if self.user_input.mouse_input.mouse_pressed {
+            if self.user_input.mouse_input.mouse_held {
                 let world_pos = self.camera.display_to_world_position(
                     self.user_input.mouse_input.mouse_position,
                     self.window.get_window_size(),
                 );
 
                 if let Ok(coord_pos) = world_pos.into_raw_usize() {
-                    if coord_pos.0 < self.entities.len() && coord_pos.1 < self.entities[0].len() {
+                    if coords_pressed.contains(&coord_pos) == false
+                        && coord_pos.0 < self.entities.len()
+                        && coord_pos.1 < self.entities[0].len()
+                    {
                         self.entities[coord_pos.0][coord_pos.1].flip_state();
+                        coords_pressed.push(coord_pos);
                     }
                 }
+            }
+
+            if self.user_input.mouse_input.mouse_released {
+                coords_pressed.clear();
             }
 
             if self
@@ -110,7 +116,10 @@ impl Game {
             {
                 let new_time = Instant::now();
                 let difference = new_time.duration_since(time);
-                println!("Time difference is {}", difference.as_secs() as f32 + difference.subsec_nanos() as f32 * 1e-9);
+                trace!(
+                    "FrameTime: {}",
+                    difference.as_secs() as f32 + difference.subsec_nanos() as f32 * 1e-9
+                );
                 time = new_time;
             }
 
@@ -124,7 +133,9 @@ impl Game {
         if let Some(renderer) = &mut self.renderer {
             match renderer.draw_quad_frame(
                 &mut self.entities,
-                &self.camera.make_view_projection_mat(),
+                &self.camera.position,
+                self.camera.ortho_projection_amount,
+                self.camera.aspect_ratio,
             ) {
                 Ok(sub_optimal) => {
                     if let Some(_) = sub_optimal {

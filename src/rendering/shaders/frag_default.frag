@@ -14,5 +14,4 @@ void main() {
     } else {
         color = vec4(push.color, 1.0);
     }
-    // color = vec4(uv, 1.0, 1.0);
 }

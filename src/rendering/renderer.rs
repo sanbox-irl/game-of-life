@@ -20,8 +20,6 @@ use gfx_hal::{
     window::{Extent2D, PresentMode, Suboptimal, Surface, Swapchain, SwapchainConfig},
     Backend, Features, Gpu, Graphics, IndexType, Instance, Primitive, QueueFamily,
 };
-use lokacore;
-use nalgebra_glm as glm;
 use std::{borrow::Cow, mem, ops::Deref};
 use winit::Window as WinitWindow;
 
@@ -32,7 +30,7 @@ use gfx_backend_metal as back;
 #[cfg(feature = "vulkan")]
 use gfx_backend_vulkan as back;
 
-use super::{BufferBundle, Entity, Vertex, Window, QUAD_INDICES, QUAD_VERTICES};
+use super::{BufferBundle, Entity, Vec2, Vertex, Window, QUAD_INDICES, QUAD_VERTICES};
 
 pub const VERTEX_SOURCE: &str = include_str!("shaders/vert_default.vert");
 pub const FRAGMENT_SOURCE: &str = include_str!("shaders/frag_default.frag");
@@ -385,7 +383,10 @@ impl<I: Instance> Renderer<I> {
                 "main",
                 None,
             )
-            .map_err(|_| "Couldn't compile vertex shader!")?;
+            .map_err(|e| {
+                error!("{}", e);
+                "Couldn't compile vertex shader!"
+            })?;
 
         let fragment_compile_artifact = compiler
             .compile_into_spirv(
@@ -504,8 +505,9 @@ impl<I: Instance> Renderer<I> {
         }];
 
         let push_constants = vec![
-            (ShaderStageFlags::VERTEX, 0..16),
-            (ShaderStageFlags::VERTEX, 16..32),
+            (ShaderStageFlags::VERTEX, 0..2), // world pos
+            (ShaderStageFlags::VERTEX, 2..4), // camera pos
+            (ShaderStageFlags::VERTEX, 4..6), // [camera_scale, camera_aspect_ratio]
             (ShaderStageFlags::FRAGMENT, 0..3),
         ];
         let layout = unsafe {
@@ -567,7 +569,9 @@ impl<I: Instance> Renderer<I> {
     pub fn draw_quad_frame(
         &mut self,
         entities: &mut [Vec<Entity>],
-        view_projection: &glm::TMat4<f32>,
+        camera_position: &Vec2,
+        camera_scale: f32,
+        aspect_ratio: f32,
     ) -> Result<Option<Suboptimal>, DrawingError> {
         // SETUP FOR THIS FRAME
         let image_available = &self.image_available_semaphores[self.current_frame];
@@ -622,20 +626,30 @@ impl<I: Instance> Renderer<I> {
                     index_type: IndexType::U16,
                 });
 
+                let camera_pos_in_bits = camera_position.into_bits();
+                let camera_scale_aspect_ratio = [camera_scale.to_bits(), aspect_ratio.to_bits()];
+
                 for row in entities.iter_mut() {
                     for entity in row.iter_mut() {
                         encoder.push_graphics_constants(
                             &self.pipeline_layout,
                             ShaderStageFlags::VERTEX,
                             0,
-                            lokacore::cast_slice::<f32, u32>(&view_projection.data),
+                            &camera_pos_in_bits,
                         );
-                        
+
                         encoder.push_graphics_constants(
                             &self.pipeline_layout,
                             ShaderStageFlags::VERTEX,
-                            (mem::size_of::<f32>() * 16) as u32,
-                            lokacore::cast_slice::<f32, u32>(&entity.matrix.data),
+                            (mem::size_of::<f32>() * 2) as u32,
+                            &entity.coordinate.into_bits(),
+                        );
+
+                        encoder.push_graphics_constants(
+                            &self.pipeline_layout,
+                            ShaderStageFlags::VERTEX,
+                            (mem::size_of::<f32>() * 4) as u32,
+                            &camera_scale_aspect_ratio,
                         );
 
                         encoder.push_graphics_constants(
@@ -698,7 +712,6 @@ impl<I: Instance> Renderer<I> {
                 .device
                 .create_swapchain(&mut self.surface, swapchain_config, None)
                 .map_err(|_| "Couldn't recreate the swapchain!")?;
-
 
             let image_views = {
                 backbuffer

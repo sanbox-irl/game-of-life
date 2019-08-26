@@ -1,19 +1,16 @@
-use super::{Color, Coord2};
-use nalgebra_glm as glm;
+use super::{Color, Vec2};
 
 #[derive(Debug)]
 pub struct Entity {
-    pub coordinate: Coord2,
+    pub coordinate: Vec2,
     pub state: State,
-    pub matrix: glm::TMat4<f32>,
 }
 
 impl Entity {
-    pub fn new(coordinate: Coord2) -> Self {
+    pub fn new(coordinate: Vec2) -> Self {
         Entity {
             coordinate,
             state: State::Unborn,
-            matrix: coordinate.into_vec2().into_glm_tmat4(0.0)
         }
     }
 

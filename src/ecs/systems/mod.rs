@@ -1,4 +1,4 @@
-pub use super::{Vec2, Entity, Coord2, State};
+pub use super::{Vec2, Entity, Vec2Int, State};
 
 mod window;
 mod user_input;

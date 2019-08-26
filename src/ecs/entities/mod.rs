@@ -1,4 +1,4 @@
-pub use super::{Vec2, Coord2, Color};
+pub use super::{Vec2, Vec2Int, Color};
 
 mod entity;
 
