@@ -6,12 +6,13 @@ use gfx_hal::{
     command::{ClearColor, ClearValue, CommandBuffer, MultiShot, Primary},
     device::Device,
     format::{Aspects, ChannelType, Format, Swizzle},
-    image::{Extent, Layout, SubresourceRange, Usage, ViewKind},
+    image::{self, Extent, Layout, SamplerInfo, SubresourceRange, Usage, ViewKind},
     pass::{Attachment, AttachmentLoadOp, AttachmentOps, AttachmentStoreOp, Subpass, SubpassDesc},
     pool::{CommandPool, CommandPoolCreateFlags},
     pso::{
-        BakedStates, BasePipeline, BlendDesc, BlendOp, BlendState, ColorBlendDesc, ColorMask,
-        DepthStencilDesc, DescriptorSetLayoutBinding, ElemStride, EntryPoint, Face, Factor, FrontFace,
+        self, AttributeDesc, BakedStates, BasePipeline, BlendDesc, BlendOp, BlendState, ColorBlendDesc,
+        ColorMask, DepthStencilDesc, Descriptor, DescriptorPool, DescriptorRangeDesc,
+        DescriptorSetLayoutBinding, DescriptorType, ElemStride, Element, EntryPoint, Face, Factor, FrontFace,
         GraphicsPipelineDesc, GraphicsShaderSet, InputAssemblerDesc, LogicOp, PipelineCreationFlags,
         PipelineStage, PolygonMode, Rasterizer, Rect, ShaderStageFlags, Specialization, VertexBufferDesc,
         VertexInputRate, Viewport,
@@ -20,6 +21,7 @@ use gfx_hal::{
     window::{Extent2D, PresentMode, Suboptimal, Surface, Swapchain, SwapchainConfig},
     Backend, Features, Gpu, Graphics, IndexType, Instance, Primitive, QueueFamily,
 };
+use imgui::{Context as ImGuiContext, DrawVert};
 use std::{borrow::Cow, mem, ops::Deref};
 use winit::Window as WinitWindow;
 
@@ -30,10 +32,7 @@ use gfx_backend_metal as back;
 #[cfg(feature = "vulkan")]
 use gfx_backend_vulkan as back;
 
-use super::{BufferBundle, Entity, Vec2, Vertex, Window, QUAD_INDICES, QUAD_VERTICES};
-
-const VERTEX_SOURCE: &'static str = include_str!("shaders/vert_default.vert");
-const FRAGMENT_SOURCE: &'static str = include_str!("shaders/frag_default.frag");
+use super::{BufferBundle, Entity, LoadedImage, Vec2, Vertex, Window, QUAD_INDICES, QUAD_VERTICES};
 
 const VERTEX_PUSH_CONSTANTS_SIZE: u32 = 6;
 const FRAG_PUSH_CONSTANTS_START: u32 = 8;
@@ -378,6 +377,9 @@ impl<I: Instance> Renderer<I> {
         ),
         &'static str,
     > {
+        const VERTEX_SOURCE: &'static str = include_str!("shaders/default_vert.vert");
+        const FRAGMENT_SOURCE: &'static str = include_str!("shaders/default_frag.frag");
+
         let mut compiler = shaderc::Compiler::new().ok_or("shaderc not found!")?;
         let vertex_compile_artifact = compiler
             .compile_into_spirv(
@@ -551,26 +553,255 @@ impl<I: Instance> Renderer<I> {
         Ok((descriptor_set_layouts, layout, gfx_pipeline))
     }
 
-    fn bind_to_memory<T: Copy>(
-        device: &mut <I::Backend as Backend>::Device,
-        buffer_bundle: &BufferBundle<I::Backend>,
-        data: &'static [T],
+    #[allow(dead_code)]
+    fn create_imgui_pipeline(
+        &mut self,
+        imgui: &mut ImGuiContext,
+        extent: Extent2D,
+        render_pass: &<I::Backend as Backend>::RenderPass,
     ) -> Result<(), &'static str> {
-        unsafe {
-            let mut data_target = device
-                .acquire_mapping_writer(&buffer_bundle.memory, 0..buffer_bundle.requirements.size)
-                .map_err(|_| "Failed to acquire an buffer mapping writer!")?;
+        const IMGUI_VERT_SOURCE: &'static str = include_str!("shaders/imgui_vert.vert");
+        const IMGUI_FRAG_SOURCE: &'static str = include_str!("shaders/imgui_frag.frag");
 
-            data_target[..data.len()].copy_from_slice(&data);
+        let mut compiler = shaderc::Compiler::new().ok_or("shaderc not found!")?;
+        let vertex_compile_artifact = compiler
+            .compile_into_spirv(
+                IMGUI_VERT_SOURCE,
+                shaderc::ShaderKind::Vertex,
+                "imgui_vertex.vert",
+                "main",
+                None,
+            )
+            .map_err(|e| {
+                error!("{}", e);
+                "Couldn't compile vertex shader!"
+            })?;
 
-            device
-                .release_mapping_writer(data_target)
-                .map_err(|_| "Couldn't release the buffer mapping writer!")?;
+        let fragment_compile_artifact = compiler
+            .compile_into_spirv(
+                IMGUI_FRAG_SOURCE,
+                shaderc::ShaderKind::Fragment,
+                "imgui_fragment.frag",
+                "main",
+                None,
+            )
+            .map_err(|e| {
+                error!("{}", e);
+                "Couldn't compile fragment shader!"
+            })?;
+
+        let vertex_shader_module = unsafe {
+            self.device
+                .create_shader_module(vertex_compile_artifact.as_binary())
+                .map_err(|_| "Couldn't make the vertex module!")?
         };
 
+        let fragment_shader_module = unsafe {
+            self.device
+                .create_shader_module(fragment_compile_artifact.as_binary())
+                .map_err(|_| "Couldn't make the fragment module!")?
+        };
+
+        let (vs_entry, fs_entry) = (
+            EntryPoint {
+                entry: "main",
+                module: &vertex_shader_module,
+                specialization: Specialization::default(),
+            },
+            EntryPoint {
+                entry: "main",
+                module: &fragment_shader_module,
+                specialization: Specialization::default(),
+            },
+        );
+
+        let input_assembler = InputAssemblerDesc::new(Primitive::TriangleList);
+
+        let shaders = GraphicsShaderSet {
+            vertex: vs_entry,
+            fragment: Some(fs_entry),
+            domain: None,
+            geometry: None,
+            hull: None,
+        };
+
+        let vertex_buffers = vec![VertexBufferDesc {
+            binding: 0,
+            stride: mem::size_of::<DrawVert>() as ElemStride,
+            rate: VertexInputRate::Vertex,
+        }];
+
+        let attributes = vec![
+            // Position
+            AttributeDesc {
+                location: 0,
+                binding: 0,
+                element: Element {
+                    format: Format::Rg32Sfloat,
+                    offset: offset_of!(DrawVert, pos) as u32,
+                },
+            },
+            // UV
+            AttributeDesc {
+                location: 1,
+                binding: 0,
+                element: Element {
+                    format: Format::Rg32Sfloat,
+                    offset: offset_of!(DrawVert, uv) as u32,
+                },
+            },
+            // Color
+            AttributeDesc {
+                location: 2,
+                binding: 0,
+                element: Element {
+                    format: Format::Rgba8Unorm,
+                    offset: offset_of!(DrawVert, col) as u32,
+                },
+            },
+        ];
+
+        let rasterizer = Rasterizer {
+            depth_clamping: false,
+            polygon_mode: PolygonMode::Fill,
+            cull_face: Face::NONE,
+            front_face: FrontFace::Clockwise,
+            depth_bias: None,
+            conservative: false,
+        };
+
+        let depth_stencil = DepthStencilDesc {
+            depth: None,
+            depth_bounds: false,
+            stencil: None,
+        };
+
+        let blender = {
+            let blend_state = BlendState {
+                color: BlendOp::Add {
+                    src: Factor::One,
+                    dst: Factor::Zero,
+                },
+                alpha: BlendOp::Add {
+                    src: Factor::One,
+                    dst: Factor::Zero,
+                },
+            };
+            BlendDesc {
+                logic_op: Some(LogicOp::Copy),
+                targets: vec![ColorBlendDesc {
+                    mask: ColorMask::ALL,
+                    blend: Some(blend_state),
+                }],
+            }
+        };
+
+        let baked_states = BakedStates {
+            viewport: Some(Viewport {
+                rect: extent.to_extent().rect(),
+                depth: (0.0..1.0),
+            }),
+            scissor: Some(extent.to_extent().rect()),
+            blend_color: None,
+            depth_bounds: None,
+        };
+
+        let sampler = unsafe {
+            self.device
+                .create_sampler(SamplerInfo::new(image::Filter::Linear, image::WrapMode::Clamp))
+                .map_err(|_| "Couldn't create a sampler!")?
+        };
+
+        let descriptor_set_layout = unsafe {
+            self.device
+                .create_descriptor_set_layout(
+                    &[DescriptorSetLayoutBinding {
+                        binding: 0,
+                        ty: DescriptorType::CombinedImageSampler,
+                        count: 1,
+                        stage_flags: ShaderStageFlags::FRAGMENT,
+                        immutable_samplers: true,
+                    }],
+                    Some(&sampler),
+                )
+                .map_err(|_| "Couldn't make a DescriptorSetLayout!")?
+        };
+
+        let mut descriptor_pool = unsafe {
+            self.device
+                .create_descriptor_pool(
+                    1,
+                    &[DescriptorRangeDesc {
+                        ty: DescriptorType::CombinedImageSampler,
+                        count: 1,
+                    }],
+                    gfx_hal::pso::DescriptorPoolCreateFlags::empty(),
+                )
+                .map_err(|_| "Couldn't create a descriptor pool!")?
+        };
+
+        let descriptor_set = unsafe {
+            descriptor_pool
+                .allocate_set(&descriptor_set_layout)
+                .map_err(|_| "Couldn't allocate a descriptor set!")?
+        };
+
+        // Create our image
+        let mut fonts = imgui.fonts();
+        let imgui::FontAtlasTexture {
+            width: font_width,
+            height: font_height,
+            data: font_data,
+        } = fonts.build_rgba32_texture();
+
+        let imgui_image = LoadedImage::new(
+            &self.adapter,
+            &self.device,
+            &mut self.command_pool,
+            &mut self.queue_group.queues[0],
+            descriptor_set,
+            font_data,
+            font_width as usize,
+            font_height as usize,
+        )?;
+
+        let push_constants = vec![(ShaderStageFlags::VERTEX, 0..4)];
+        let pipeline_layout = unsafe {
+            self.device
+                .create_pipeline_layout(Some(&descriptor_set_layout), push_constants)
+                .map_err(|_| "Couldn't create a pipeline layout")?
+        };
+
+        let imgui_pipeline = {
+            let desc = GraphicsPipelineDesc {
+                shaders,
+                rasterizer,
+                vertex_buffers,
+                attributes,
+                input_assembler,
+                blender,
+                depth_stencil,
+                multisampling: None,
+                baked_states,
+                layout: &pipeline_layout,
+                subpass: Subpass {
+                    index: 0,
+                    main_pass: render_pass,
+                },
+                flags: PipelineCreationFlags::empty(),
+                parent: BasePipeline::None,
+            };
+
+            unsafe {
+                self.device
+                    .create_graphics_pipeline(&desc, None)
+                    .map_err(|_| "Couldn't create a graphics pipeline!")?
+            }
+        };
+
+        // Ok((descriptor_set_layouts, layout, gfx_pipeline))
         Ok(())
     }
-
     pub fn draw_quad_frame(
         &mut self,
         entities: &mut [Vec<Entity>],
@@ -800,6 +1031,26 @@ impl<I: Instance> Renderer<I> {
 
             self.device.destroy_swapchain(manual_drop!(self.swapchain));
         }
+
+        Ok(())
+    }
+
+    fn bind_to_memory<T: Copy>(
+        device: &mut <I::Backend as Backend>::Device,
+        buffer_bundle: &BufferBundle<I::Backend>,
+        data: &'static [T],
+    ) -> Result<(), &'static str> {
+        unsafe {
+            let mut data_target = device
+                .acquire_mapping_writer(&buffer_bundle.memory, 0..buffer_bundle.requirements.size)
+                .map_err(|_| "Failed to acquire an buffer mapping writer!")?;
+
+            data_target[..data.len()].copy_from_slice(&data);
+
+            device
+                .release_mapping_writer(data_target)
+                .map_err(|_| "Couldn't release the buffer mapping writer!")?;
+        };
 
         Ok(())
     }

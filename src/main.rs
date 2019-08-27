@@ -4,6 +4,8 @@ extern crate env_logger;
 extern crate winit;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate memoffset;
 extern crate gfx_hal;
 extern crate imgui;
 
