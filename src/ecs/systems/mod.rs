@@ -1,9 +1,9 @@
 pub use super::{Vec2, Entity, Vec2Int, State};
 
+mod dear_imgui;
 mod window;
 mod user_input;
 mod camera;
-mod dear_imgui;
 pub mod rule_setter;
 
 pub use window::Window;

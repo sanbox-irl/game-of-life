@@ -1,3 +1,5 @@
+#![warn(elided_lifetimes_in_paths)]
+
 extern crate env_logger;
 extern crate winit;
 #[macro_use]

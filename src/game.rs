@@ -1,4 +1,4 @@
-use super::ecs::{rule_setter, Camera, Entity, State, UserInput, Window};
+use super::ecs::{rule_setter, Camera, Entity, Imgui, State, UserInput, Window};
 use super::rendering::{DrawingError, TypedRenderer};
 use super::utilities::{Vec2, Vec2Int};
 use std::time::Instant;
@@ -47,6 +47,10 @@ impl Game {
         entities[6][4].state = State::Alive;
 
         trace!("Entities: {:#?}", entities);
+
+        let mut imgui = Imgui::new(&window);
+        let ui = imgui.begin_frame(&window);
+        ui.draw(&window);
 
         Ok(Game {
             window,
