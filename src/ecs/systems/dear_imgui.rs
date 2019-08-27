@@ -33,6 +33,7 @@ impl Imgui {
             },
         ]);
         imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
+        imgui.fonts().build_rgba32_texture();
 
         Imgui { imgui, platform }
     }
@@ -42,7 +43,6 @@ impl Imgui {
             .prepare_frame(self.imgui.io_mut(), &window.window)
             .expect("Failed to prepare a frame");
         let ui = self.imgui.frame();
-        println!("We here");
 
         Window::new(&ui, im_str!("Hello world"))
             .size([300.0, 100.0], Condition::FirstUseEver)
@@ -52,10 +52,6 @@ impl Imgui {
             ui,
             platform: &self.platform,
         }
-    }
-
-    pub fn draw(&mut self, window: &WinitWindow, ui: Ui<'_>) {
-        self.platform.prepare_render(&ui, &window.window);
     }
 }
 
