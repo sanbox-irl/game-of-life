@@ -325,13 +325,7 @@ impl<I: Instance> Renderer<I> {
 
         // CREATE PIPELINES
         let mut pipeline_bundles = ArrayVec::new();
-        let (descriptor_set_layouts, pipeline_layout, graphics_pipeline) =
-            Self::create_pipeline(&mut device, extent, &render_pass)?;
-        pipeline_bundles.push(PipelineBundle {
-            descriptor_set_layouts,
-            pipeline_layout: manual_new!(pipeline_layout),
-            graphics_pipeline: manual_new!(graphics_pipeline),
-        });
+        pipeline_bundles.push(Self::create_pipeline(&mut device, extent, &render_pass)?);
 
         // CREATE VERT-INDEX BUFFERS
         let mut vertex_index_buffer_bundles = ArrayVec::new();
@@ -385,14 +379,7 @@ impl<I: Instance> Renderer<I> {
         device: &mut <I::Backend as Backend>::Device,
         extent: Extent2D,
         render_pass: &<I::Backend as Backend>::RenderPass,
-    ) -> Result<
-        (
-            Vec<<I::Backend as Backend>::DescriptorSetLayout>,
-            <I::Backend as Backend>::PipelineLayout,
-            <I::Backend as Backend>::GraphicsPipeline,
-        ),
-        &'static str,
-    > {
+    ) -> Result<(PipelineBundle<I::Backend>), &'static str> {
         const VERTEX_SOURCE: &'static str = include_str!("shaders/default_vert.vert");
         const FRAGMENT_SOURCE: &'static str = include_str!("shaders/default_frag.frag");
 
@@ -520,11 +507,11 @@ impl<I: Instance> Renderer<I> {
         let bindings = Vec::<DescriptorSetLayoutBinding>::new();
         let immutable_sampler: Vec<<I::Backend as Backend>::Sampler> = Vec::new();
 
-        let descriptor_set_layouts = vec![unsafe {
+        let descriptor_set_layouts = Some(unsafe {
             device
                 .create_descriptor_set_layout(bindings, immutable_sampler)
                 .map_err(|_| "Couldn't make a Descriptor Set Layout!")?
-        }];
+        });
 
         let push_constants = vec![
             (ShaderStageFlags::VERTEX, 0..VERTEX_PUSH_CONSTANTS_SIZE),
@@ -566,7 +553,11 @@ impl<I: Instance> Renderer<I> {
             }
         };
 
-        Ok((descriptor_set_layouts, layout, gfx_pipeline))
+        Ok(PipelineBundle {
+            descriptor_set_layouts,
+            pipeline_layout: manual_new!(layout),
+            graphics_pipeline: manual_new!(gfx_pipeline),
+        })
     }
 
     #[allow(dead_code)]
@@ -815,13 +806,9 @@ impl<I: Instance> Renderer<I> {
             }
         };
 
-        let pipeline_bundle = PipelineBundle {
-            descriptor_set_layouts,
-            graphics_pipeline: manual_new!(graphics_pipeline),
-            pipeline_layout: manual_new!(pipeline_layout)
-        };
+        let pipeline_bundle = PipelineBundle::new(descriptor_set_layout, pipeline_layout, imgui_pipeline);
 
-        Ok((descriptor_set_layout, pipeline_layout, imgui_pipeline))
+        Ok((pipeline_bundle, imgui_image))
     }
 
     pub fn draw_quad_frame(
@@ -1110,14 +1097,11 @@ impl<I: Instance> Renderer<I> {
                 .map(|_| command_pool.acquire_command_buffer())
                 .collect();
 
-            let (descriptor_set_layouts, pipeline_layout, graphics_pipeline) =
-                Self::create_pipeline(&mut self.device, extent, &self.render_pass)?;
-
-            self.pipeline_bundles[QUAD_DATA] = PipelineBundle {
-                descriptor_set_layouts,
-                pipeline_layout: manual_new!(pipeline_layout),
-                graphics_pipeline: manual_new!(graphics_pipeline),
-            };
+            self.pipeline_bundles.push(Self::create_pipeline(
+                &mut self.device,
+                extent,
+                &self.render_pass,
+            )?);
 
             // Finally, we got ourselves a nice and shiny new swapchain!
             self.swapchain = manual_new!(swapchain);
@@ -1139,7 +1123,9 @@ impl<I: Instance> Renderer<I> {
             self.device
                 .destroy_command_pool(manual_drop!(self.command_pool).into_raw());
 
-            &self.pipeline_bundles[QUAD_DATA].manually_drop(&self.device);
+            for data in self.pipeline_bundles.drain(QUAD_DATA..QUAD_DATA + 1) {
+                data.manually_drop(&self.device);
+            }
 
             self.device.destroy_swapchain(manual_drop!(self.swapchain));
         }
@@ -1188,7 +1174,7 @@ impl<I: Instance> core::ops::Drop for Renderer<I> {
                 self.device.destroy_image_view(image_view);
             }
 
-            for this_pipeline in self.pipeline_bundles.iter_mut() {
+            for this_pipeline in self.pipeline_bundles.drain(..) {
                 this_pipeline.manually_drop(&self.device);
             }
 
