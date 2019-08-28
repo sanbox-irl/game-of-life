@@ -7,10 +7,12 @@ use gfx_hal::{
     Backend,
 };
 use std::marker::PhantomData;
+use std::mem;
 
 pub struct BufferBundle<B: Backend> {
     pub buffer: ManuallyDrop<B::Buffer>,
     pub requirements: Requirements,
+    pub mapped: *mut u8,
     pub memory: ManuallyDrop<B::Memory>,
     pub phantom: PhantomData<B::Device>,
 }
@@ -48,12 +50,29 @@ impl<B: Backend> BufferBundle<B> {
                 .bind_buffer_memory(&memory, 0, &mut buffer)
                 .map_err(|_| "Couldn't bind the buffer memory!")?;
 
+            let mapped = device
+                .map_memory(&memory, 0..requirements.size)
+                .map_err(|_| "Couldn't get a map to the buffer's location")?;
+
             Ok(Self {
                 buffer: manual_new!(buffer),
                 requirements,
                 memory: manual_new!(memory),
                 phantom: PhantomData,
+                mapped,
             })
+        }
+    }
+
+    pub fn update_buffer<T>(&mut self, verts: &[T], vertex_offset: usize) {
+        assert!(self.requirements.size >= (verts.len() * mem::size_of::<T>() + vertex_offset) as u64);
+
+        // copy vertex data
+        unsafe {
+            let dest = self.mapped.offset((vertex_offset * mem::size_of::<T>()) as isize);
+
+            let src = &verts[0];
+            std::ptr::copy_nonoverlapping(src, dest as *mut T, verts.len());
         }
     }
 
@@ -62,4 +81,9 @@ impl<B: Backend> BufferBundle<B> {
         device.destroy_buffer(ManuallyDrop::into_inner(read(&self.buffer)));
         device.free_memory(ManuallyDrop::into_inner(read(&self.memory)));
     }
+}
+
+pub struct VertexIndexPairBufferBundle<B: Backend> {
+    pub vertex_buffer: BufferBundle<B>,
+    pub index_buffer: BufferBundle<B>,
 }

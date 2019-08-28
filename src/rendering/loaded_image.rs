@@ -12,7 +12,7 @@ use gfx_hal::{
     pso::{Descriptor, DescriptorSetWrite},
     Backend, Capability, CommandQueue, Supports, Transfer,
 };
-use std::{marker::PhantomData, mem::size_of, ops::Deref};
+use std::{marker::PhantomData, mem::size_of};
 
 #[allow(dead_code)]
 pub struct LoadedImage<B: Backend> {
@@ -225,7 +225,6 @@ impl<B: Backend> LoadedImage<B> {
             })
         }
     }
-
     pub unsafe fn manually_drop(&self, device: &B::Device) {
         use core::ptr::read;
         device.destroy_sampler(ManuallyDrop::into_inner(read(&self.sampler)));

@@ -14,12 +14,14 @@ macro_rules! manual_new {
 }
 
 mod buffer_bundle;
+mod pipeline_bundle;
 mod loaded_image;
 mod renderer;
 mod vertex;
 
 pub use super::ecs::Entity;
-pub use buffer_bundle::BufferBundle;
+pub use buffer_bundle::{BufferBundle, VertexIndexPairBufferBundle};
 pub use loaded_image::LoadedImage;
 pub use renderer::{DrawingError, TypedRenderer};
 pub use vertex::*;
+pub use pipeline_bundle::PipelineBundle;
