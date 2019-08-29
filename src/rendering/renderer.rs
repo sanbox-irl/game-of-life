@@ -21,7 +21,7 @@ use gfx_hal::{
     window::{Extent2D, PresentMode, Suboptimal, Surface, Swapchain, SwapchainConfig},
     Backend, Features, Gpu, Graphics, IndexType, Instance, Primitive, QueueFamily,
 };
-use imgui::{Context as ImGuiContext, DrawData, DrawVert, DrawIdx};
+use imgui::{Context as ImGuiContext, DrawData, DrawIdx, DrawVert, TextureId};
 use std::{borrow::Cow, mem, ops::Deref};
 use winit::Window as WinitWindow;
 
@@ -45,7 +45,6 @@ const QUAD_DATA: usize = 0;
 const IMGUI_DATA: usize = 1;
 const PIPELINE_SIZE: usize = 2;
 
-#[allow(dead_code)]
 pub struct Renderer<I: Instance> {
     // Top
     instance: ManuallyDrop<I>,
@@ -707,10 +706,7 @@ impl<I: Instance> Renderer<I> {
         };
 
         let baked_states = BakedStates {
-            viewport: Some(Viewport {
-                rect: extent.to_extent().rect(),
-                depth: (0.0..1.0),
-            }),
+            viewport: None,
             scissor: None,
             blend_color: None,
             depth_bounds: None,
@@ -811,6 +807,9 @@ impl<I: Instance> Renderer<I> {
             data: font_data,
         } = fonts.build_rgba32_texture();
 
+        // image::png::PNGEncoder::new()
+        std::fs::write("jack_look_here.png", font_data);
+
         let imgui_image = LoadedImage::allocate_and_create(
             &self.adapter,
             &self.device,
@@ -821,6 +820,8 @@ impl<I: Instance> Renderer<I> {
             font_width as usize,
             font_height as usize,
         )?;
+
+        fonts.tex_id = TextureId::from(self.images.len());
 
         self.images.push(imgui_image);
         Ok(())
@@ -947,6 +948,7 @@ impl<I: Instance> Renderer<I> {
                     // Bind pipeline
                     let imgui_pipeline = &self.pipeline_bundles[IMGUI_DATA];
                     encoder.bind_graphics_pipeline(&imgui_pipeline.graphics_pipeline);
+
                     // descriptor SET needs to be here...this is from the texture.
                     encoder.bind_graphics_descriptor_sets(
                         &imgui_pipeline.pipeline_layout,
@@ -972,6 +974,17 @@ impl<I: Instance> Renderer<I> {
                         -1.0,           -1.0,
                     ]);
 
+                    let viewport = Viewport {
+                        rect: Rect {
+                            x: 0,
+                            y: 0,
+                            w: imgui_dimensions.x as i16,
+                            h: imgui_dimensions.y as i16,
+                        },
+                        depth: 0.0..1.0,
+                    };
+                    encoder.set_viewports(0, &[viewport]);
+
                     encoder.push_graphics_constants(
                         &imgui_pipeline.pipeline_layout,
                         ShaderStageFlags::VERTEX,
@@ -990,6 +1003,7 @@ impl<I: Instance> Renderer<I> {
 
                         for cmd in list.commands() {
                             if let imgui::DrawCmd::Elements { count, cmd_params } = cmd {
+                                println!("Command Params is {:?}", cmd_params);
                                 // Calculate the scissor
                                 let scissor = Rect {
                                     x: cmd_params.clip_rect[0] as i16,

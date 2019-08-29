@@ -25,12 +25,7 @@ impl Imgui {
                     size_pixels: font_size,
                     ..FontConfig::default()
                 }),
-            },
-            FontSource::TtfData {
-                config: None,
-                data: include_bytes!("../../../resources/fonts/mplus-1p-regular.ttf"),
-                size_pixels: font_size,
-            },
+            }
         ]);
         imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
         imgui.fonts().build_rgba32_texture();

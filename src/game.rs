@@ -123,7 +123,7 @@ impl Game {
             {
                 let new_time = Instant::now();
                 let difference = new_time.duration_since(time);
-                trace!(
+                println!(
                     "FrameTime: {}",
                     difference.as_secs() as f32 + difference.subsec_nanos() as f32 * 1e-9
                 );
