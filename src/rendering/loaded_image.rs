@@ -1,4 +1,5 @@
 use super::BufferBundle;
+use super::PipelineBundle;
 use core::mem::ManuallyDrop;
 use gfx_hal::{
     adapter::{Adapter, MemoryTypeId, PhysicalDevice},
@@ -27,12 +28,12 @@ pub struct LoadedImage<B: Backend> {
 
 #[allow(dead_code)]
 impl<B: Backend> LoadedImage<B> {
-    pub fn new<C: Capability + Supports<Transfer>>(
+    pub fn allocate_and_create<C: Capability + Supports<Transfer>>(
         adapter: &Adapter<B>,
         device: &B::Device,
         command_pool: &mut CommandPool<B, C>,
         command_queue: &mut CommandQueue<B, C>,
-        descriptor_set: B::DescriptorSet,
+        pipeline_bundle: &mut PipelineBundle<B>,
         img: &[u8],
         width: usize,
         height: usize,
@@ -201,6 +202,8 @@ impl<B: Backend> LoadedImage<B> {
             //  11. Kill off our buffer!
             staging_bundle.manually_drop(device);
             command_pool.free(Some(cmd_buffer));
+
+            let descriptor_set = pipeline_bundle.allocate_descriptor_set()?;
 
             let texture = Self {
                 image: manual_new!(image_object),

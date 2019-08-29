@@ -7,23 +7,21 @@ use gfx_hal::{
     command::{ClearColor, ClearValue, CommandBuffer, MultiShot, Primary},
     device::Device,
     format::{Aspects, ChannelType, Format, Swizzle},
-    image::{self, Extent, Layout, SamplerInfo, SubresourceRange, Usage, ViewKind},
+    image::{Extent, Layout, SubresourceRange, Usage, ViewKind},
     pass::{Attachment, AttachmentLoadOp, AttachmentOps, AttachmentStoreOp, Subpass, SubpassDesc},
     pool::{CommandPool, CommandPoolCreateFlags},
     pso::{
-        self, AttributeDesc, BakedStates, BasePipeline, BlendDesc, BlendOp, BlendState, ColorBlendDesc,
-        ColorMask, DepthStencilDesc, Descriptor, DescriptorPool, DescriptorRangeDesc,
-        DescriptorSetLayoutBinding, DescriptorType, ElemStride, Element, EntryPoint, Face, Factor, FrontFace,
-        GraphicsPipelineDesc, GraphicsShaderSet, InputAssemblerDesc, LogicOp, PipelineCreationFlags,
-        PipelineStage, PolygonMode, Rasterizer, Rect, ShaderStageFlags, Specialization, VertexBufferDesc,
-        VertexInputRate, Viewport,
+        AttributeDesc, BakedStates, BasePipeline, BlendDesc, BlendOp, BlendState, ColorBlendDesc, ColorMask,
+        DepthStencilDesc, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, ElemStride,
+        Element, EntryPoint, Face, Factor, FrontFace, GraphicsPipelineDesc, GraphicsShaderSet,
+        InputAssemblerDesc, LogicOp, PipelineCreationFlags, PipelineStage, PolygonMode, Rasterizer, Rect,
+        ShaderStageFlags, Specialization, VertexBufferDesc, VertexInputRate, Viewport,
     },
     queue::{family::QueueGroup, Submission},
     window::{Extent2D, PresentMode, Suboptimal, Surface, Swapchain, SwapchainConfig},
-    Backend, Capability, CommandQueue, Features, Gpu, Graphics, IndexType, Instance, Primitive, QueueFamily,
-    Supports, Transfer,
+    Backend, Features, Gpu, Graphics, IndexType, Instance, Primitive, QueueFamily,
 };
-use imgui::{Context as ImGuiContext, DrawVert};
+use imgui::{Context as ImGuiContext, DrawData, DrawVert};
 use std::{borrow::Cow, mem, ops::Deref};
 use winit::Window as WinitWindow;
 
@@ -60,6 +58,7 @@ pub struct Renderer<I: Instance> {
     // Pipeline nonsense
     pipeline_bundles: ArrayVec<[PipelineBundle<I::Backend>; PIPELINE_SIZE]>,
     vertex_index_buffer_bundles: ArrayVec<[VertexIndexPairBufferBundle<I::Backend>; PIPELINE_SIZE]>,
+    imgui_image: Option<LoadedImage<I::Backend>>,
 
     // GPU Swapchain
     swapchain: ManuallyDrop<<I::Backend as Backend>::Swapchain>,
@@ -92,14 +91,16 @@ impl<I: Instance> Renderer<I> {
         // Create A Surface
         let surface = instance.create_surface(&window.window);
         // Create A renderer
-        Ok(TypedRenderer::new(&window.window, instance, surface, imgui)?)
+        let mut renderer = TypedRenderer::new(&window.window, instance, surface)?;
+        // Allocate our Textures -- spin this out to another method if we ever make another texture
+        renderer.allocate_imgui_textures(imgui)?;
+        Ok(renderer)
     }
 
     pub fn new(
         window: &WinitWindow,
         instance: I,
         mut surface: <I::Backend as Backend>::Surface,
-        imgui: &mut ImGuiContext,
     ) -> Result<Self, &'static str> {
         let adapter = instance
             .enumerate_adapters()
@@ -112,7 +113,7 @@ impl<I: Instance> Renderer<I> {
             .ok_or("Couldn't find a graphical adapter!")?;
 
         // open it up!
-        let (mut device, mut queue_group) = {
+        let (mut device, queue_group) = {
             let queue_family = adapter
                 .queue_families
                 .iter()
@@ -327,16 +328,7 @@ impl<I: Instance> Renderer<I> {
         // CREATE PIPELINES
         let mut pipeline_bundles = ArrayVec::new();
         pipeline_bundles.push(Self::create_pipeline(&mut device, &extent, &render_pass)?);
-        let (imgui_pipeline, _image_loaded) = Self::create_imgui_pipeline(
-            &device,
-            &adapter,
-            imgui,
-            &mut command_pool,
-            &mut queue_group.queues[0],
-            &extent,
-            &render_pass,
-        )?;
-        pipeline_bundles.push(imgui_pipeline);
+        pipeline_bundles.push(Self::create_imgui_pipeline(&device, &extent, &render_pass)?);
 
         // CREATE VERT-INDEX BUFFERS
         let mut vertex_index_buffer_bundles = ArrayVec::new();
@@ -383,6 +375,7 @@ impl<I: Instance> Renderer<I> {
             vertex_index_buffer_bundles,
 
             pipeline_bundles,
+            imgui_image: None,
         })
     }
 
@@ -518,7 +511,7 @@ impl<I: Instance> Renderer<I> {
         let bindings = Vec::<DescriptorSetLayoutBinding>::new();
         let immutable_sampler: Vec<<I::Backend as Backend>::Sampler> = Vec::new();
 
-        let descriptor_set_layouts = Some(unsafe {
+        let descriptor_set_layout = Some(unsafe {
             device
                 .create_descriptor_set_layout(bindings, immutable_sampler)
                 .map_err(|_| "Couldn't make a Descriptor Set Layout!")?
@@ -533,7 +526,7 @@ impl<I: Instance> Renderer<I> {
         ];
         let layout = unsafe {
             device
-                .create_pipeline_layout(&descriptor_set_layouts, push_constants)
+                .create_pipeline_layout(&descriptor_set_layout, push_constants)
                 .map_err(|_| "Couldn't create a pipeline layout")?
         };
 
@@ -565,22 +558,18 @@ impl<I: Instance> Renderer<I> {
         };
 
         Ok(PipelineBundle {
-            descriptor_set_layouts,
+            descriptor_set_layout,
+            descriptor_pool: None,
             pipeline_layout: manual_new!(layout),
             graphics_pipeline: manual_new!(gfx_pipeline),
         })
     }
 
-    #[allow(dead_code)]
-    fn create_imgui_pipeline<C: Capability + Supports<Transfer>>(
+    fn create_imgui_pipeline(
         device: &<I::Backend as Backend>::Device,
-        adapter: &Adapter<I::Backend>,
-        imgui: &mut ImGuiContext,
-        command_pool: &mut CommandPool<I::Backend, C>,
-        command_queue: &mut CommandQueue<I::Backend, C>,
         extent: &Extent2D,
         render_pass: &<I::Backend as Backend>::RenderPass,
-    ) -> Result<(PipelineBundle<I::Backend>, LoadedImage<I::Backend>), &'static str> {
+    ) -> Result<PipelineBundle<I::Backend>, &'static str> {
         const IMGUI_VERT_SOURCE: &'static str = include_str!("shaders/imgui_vert.vert");
         const IMGUI_FRAG_SOURCE: &'static str = include_str!("shaders/imgui_frag.frag");
 
@@ -751,7 +740,7 @@ impl<I: Instance> Renderer<I> {
                 .map_err(|_| "Couldn't make a DescriptorSetLayout!")?
         };
 
-        let mut descriptor_pool = unsafe {
+        let descriptor_pool = unsafe {
             device
                 .create_descriptor_pool(
                     1,
@@ -769,31 +758,6 @@ impl<I: Instance> Renderer<I> {
                 )
                 .map_err(|_| "Couldn't create a descriptor pool!")?
         };
-
-        let descriptor_set = unsafe {
-            descriptor_pool
-                .allocate_set(&descriptor_set_layout)
-                .map_err(|_| "Couldn't allocate a descriptor set!")?
-        };
-
-        // Create our image
-        let mut fonts = imgui.fonts();
-        let imgui::FontAtlasTexture {
-            width: font_width,
-            height: font_height,
-            data: font_data,
-        } = fonts.build_rgba32_texture();
-
-        let imgui_image = LoadedImage::new(
-            adapter,
-            device,
-            command_pool,
-            command_queue,
-            descriptor_set,
-            font_data,
-            font_width as usize,
-            font_height as usize,
-        )?;
 
         let push_constants = vec![(ShaderStageFlags::VERTEX, 0..4)];
         let pipeline_layout = unsafe {
@@ -829,9 +793,37 @@ impl<I: Instance> Renderer<I> {
             }
         };
 
-        let pipeline_bundle = PipelineBundle::new(descriptor_set_layout, pipeline_layout, imgui_pipeline);
+        let pipeline_bundle = PipelineBundle::new(
+            descriptor_set_layout,
+            Some(descriptor_pool),
+            pipeline_layout,
+            imgui_pipeline,
+        );
 
-        Ok((pipeline_bundle, imgui_image))
+        Ok(pipeline_bundle)
+    }
+
+    fn allocate_imgui_textures(&mut self, imgui: &mut ImGuiContext) -> Result<(), &'static str> {
+        let mut fonts = imgui.fonts();
+        let imgui::FontAtlasTexture {
+            width: font_width,
+            height: font_height,
+            data: font_data,
+        } = fonts.build_rgba32_texture();
+
+        let imgui_image = LoadedImage::allocate_and_create(
+            &self.adapter,
+            &self.device,
+            &mut self.command_pool,
+            &mut self.queue_group.queues[0],
+            &mut self.pipeline_bundles[IMGUI_DATA],
+            font_data,
+            font_width as usize,
+            font_height as usize,
+        )?;
+
+        self.imgui_image = Some(imgui_image);
+        Ok(())
     }
 
     pub fn draw_quad_frame(
@@ -840,6 +832,7 @@ impl<I: Instance> Renderer<I> {
         camera_position: &Vec2,
         camera_scale: f32,
         aspect_ratio: f32,
+        draw_data: DrawData,
     ) -> Result<Option<Suboptimal>, DrawingError> {
         // SETUP FOR THIS FRAME
         let image_available = &self.image_available_semaphores[self.current_frame];
@@ -933,12 +926,11 @@ impl<I: Instance> Renderer<I> {
                 }
 
                 // Draw ImGUI GML
-                /*
                 {
                     let this_vertex_buffer = BufferBundle::new(
                         &self.adapter,
                         &self.device,
-                        draw_data.total_vtx_count(),
+                        draw_data.total_vtx_count as u64,
                         buffer::Usage::VERTEX,
                     )
                     .map_err(|_| DrawingError::BufferCreation)?;
@@ -946,21 +938,23 @@ impl<I: Instance> Renderer<I> {
                     let this_index_buffer = BufferBundle::new(
                         &self.adapter,
                         &self.device,
-                        draw_data.total_idx_count(),
+                        draw_data.total_idx_count as u64,
                         buffer::Usage::INDEX,
                     )
                     .map_err(|_| DrawingError::BufferCreation)?;
 
                     // Bind pipeline
-                    encoder.bind_graphics_pipeline(imgui_pipeline);
+                    let imgui_pipeline = &self.pipeline_bundles[IMGUI_DATA];
+                    encoder.bind_graphics_pipeline(&imgui_pipeline.graphics_pipeline);
+                    // descriptor SET needs to be here...this is from the texture.
                     encoder.bind_graphics_descriptor_sets(
-                        imgui_pipeline_layout,
+                        &imgui_pipeline.pipeline_layout,
                         0,
-                        Some(imgui_pipeline_descriptor_set),
+                        Some(&imgui_pipeline.descriptor_set_layout),
                         None as Option<u32>,
                     );
 
-                    // Bind vertex and index buffers -- what do we do here?
+                    // Bind vertex and index buffers
                     encoder.bind_vertex_buffers(0, Some((this_vertex_buffer.buffer.deref(), 0)));
                     encoder.bind_index_buffer(buffer::IndexBufferView {
                         buffer: &this_index_buffer.buffer,
@@ -978,8 +972,8 @@ impl<I: Instance> Renderer<I> {
                     ]);
 
                     encoder.push_graphics_constants(
-                        imgui_pipeline_layout,
-                        pso::ShaderStageFlags::VERTEX,
+                        &imgui_pipeline.pipeline_layout,
+                        ShaderStageFlags::VERTEX,
                         0,
                         &push_constants,
                     );
@@ -988,36 +982,37 @@ impl<I: Instance> Renderer<I> {
                     let mut index_offset = 0;
 
                     // Iterate over drawlists
-                    for list in draw_data {
+                    for list in draw_data.draw_lists() {
                         // Update vertex and index buffers
-                        this_vertex_buffer.update_buffer(list.vtx_buffer, vertex_offset);
-                        this_index_buffer.update_buffer(list.idx_buffer, index_offset);
+                        this_vertex_buffer.update_buffer(list.vtx_buffer(), vertex_offset);
+                        this_index_buffer.update_buffer(list.idx_buffer(), index_offset);
 
-                        for cmd in list.cmd_buffer.iter() {
-                            // Calculate the scissor
-                            let scissor = Rect {
-                                x: cmd.clip_rect.x as i16,
-                                y: cmd.clip_rect.y as i16,
-                                w: (cmd.clip_rect.z - cmd.clip_rect.x) as i16,
-                                h: (cmd.clip_rect.w - cmd.clip_rect.y) as i16,
-                            };
-                            encoder.set_scissors(0, &[scissor]);
+                        for cmd in list.commands() {
+                            if let imgui::DrawCmd::Elements { count, cmd_params } = cmd {
+                                // Calculate the scissor
+                                let scissor = Rect {
+                                    x: cmd_params.clip_rect[0] as i16,
+                                    y: cmd_params.clip_rect[1] as i16,
+                                    w: (cmd_params.clip_rect[2] - cmd_params.clip_rect[0]) as i16,
+                                    h: (cmd_params.clip_rect[3] - cmd_params.clip_rect[1]) as i16,
+                                };
+                                encoder.set_scissors(0, &[scissor]);
 
-                            // Actually draw things
-                            encoder.draw_indexed(
-                                index_offset as u32..index_offset as u32 + cmd.elem_count,
-                                vertex_offset as i32,
-                                0..1,
-                            );
+                                // Actually draw things
+                                encoder.draw_indexed(
+                                    index_offset as u32..(index_offset + count) as u32,
+                                    vertex_offset as i32,
+                                    0..1,
+                                );
 
-                            index_offset += cmd.elem_count as usize;
+                                index_offset += count as usize;
+                            }
                         }
 
                         // Increment offsets
-                        vertex_offset += list.vtx_buffer.len();
+                        vertex_offset += list.vtx_buffer().len();
                     }
                 }
-                */
             }
             buffer.finish();
         }
@@ -1120,8 +1115,14 @@ impl<I: Instance> Renderer<I> {
                 .map(|_| command_pool.acquire_command_buffer())
                 .collect();
 
+            // Recreate the pipelines...
             self.pipeline_bundles.push(Self::create_pipeline(
                 &mut self.device,
+                &extent,
+                &self.render_pass,
+            )?);
+            self.pipeline_bundles.push(Self::create_imgui_pipeline(
+                &self.device,
                 &extent,
                 &self.render_pass,
             )?);
@@ -1146,8 +1147,8 @@ impl<I: Instance> Renderer<I> {
             self.device
                 .destroy_command_pool(manual_drop!(self.command_pool).into_raw());
 
-            for data in self.pipeline_bundles.drain(QUAD_DATA..QUAD_DATA + 1) {
-                data.manually_drop(&self.device);
+            for pipeline_bundle in self.pipeline_bundles.drain(..) {
+                pipeline_bundle.manually_drop(&self.device);
             }
 
             self.device.destroy_swapchain(manual_drop!(self.swapchain));
@@ -1220,4 +1221,5 @@ pub enum DrawingError {
     WaitOnFence,
     ResetFence,
     PresentIntoSwapchain,
+    BufferCreation,
 }
