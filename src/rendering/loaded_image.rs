@@ -12,7 +12,7 @@ use gfx_hal::{
     pso::{Descriptor, DescriptorSetWrite},
     Backend, Capability, CommandQueue, Supports, Transfer,
 };
-use std::{marker::PhantomData, mem::size_of};
+use std::{marker::PhantomData, mem::size_of, ops::Deref};
 
 #[allow(dead_code)]
 pub struct LoadedImage<B: Backend> {
@@ -202,19 +202,7 @@ impl<B: Backend> LoadedImage<B> {
             staging_bundle.manually_drop(device);
             command_pool.free(Some(cmd_buffer));
 
-            // Write that fucker: Write the descriptors into the descriptor set
-            device.write_descriptor_sets(Some(DescriptorSetWrite {
-                set: &descriptor_set,
-                binding: 0,
-                array_offset: 0,
-                descriptors: &[Descriptor::CombinedImageSampler(
-                    &image_view,
-                    Layout::ShaderReadOnlyOptimal,
-                    &sampler,
-                )],
-            }));
-
-            Ok(Self {
+            let texture = Self {
                 image: manual_new!(image_object),
                 requirements,
                 memory: manual_new!(memory),
@@ -222,7 +210,28 @@ impl<B: Backend> LoadedImage<B> {
                 sampler: manual_new!(sampler),
                 descriptor_set: manual_new!(descriptor_set),
                 phantom: PhantomData,
-            })
+            };
+
+            // Write that fucker: Write the descriptors into the descriptor set
+            device.write_descriptor_sets(vec![
+                DescriptorSetWrite {
+                    set: texture.descriptor_set.deref(),
+                    binding: 0,
+                    array_offset: 0,
+                    descriptors: Some(Descriptor::Image(
+                        texture.image_view.deref(),
+                        Layout::ShaderReadOnlyOptimal,
+                    )),
+                },
+                DescriptorSetWrite {
+                    set: texture.descriptor_set.deref(),
+                    binding: 1,
+                    array_offset: 0,
+                    descriptors: Some(Descriptor::Sampler(texture.sampler.deref())),
+                },
+            ]);
+
+            Ok(texture)
         }
     }
     pub unsafe fn manually_drop(&self, device: &B::Device) {

@@ -20,9 +20,10 @@ use gfx_hal::{
     },
     queue::{family::QueueGroup, Submission},
     window::{Extent2D, PresentMode, Suboptimal, Surface, Swapchain, SwapchainConfig},
-    Backend, Features, Gpu, Graphics, IndexType, Instance, Primitive, QueueFamily,
+    Backend, Capability, CommandQueue, Features, Gpu, Graphics, IndexType, Instance, Primitive, QueueFamily,
+    Supports, Transfer,
 };
-use imgui::{Context as ImGuiContext, DrawData, DrawVert};
+use imgui::{Context as ImGuiContext, DrawVert};
 use std::{borrow::Cow, mem, ops::Deref};
 use winit::Window as WinitWindow;
 
@@ -54,7 +55,6 @@ pub struct Renderer<I: Instance> {
     adapter: Adapter<I::Backend>,
     queue_group: ManuallyDrop<QueueGroup<I::Backend, Graphics>>,
     device: ManuallyDrop<<I::Backend as Backend>::Device>,
-
     format: Format,
 
     // Pipeline nonsense
@@ -86,19 +86,20 @@ pub struct Renderer<I: Instance> {
 
 pub type TypedRenderer = Renderer<back::Instance>;
 impl<I: Instance> Renderer<I> {
-    pub fn typed_new(window: &Window) -> Result<TypedRenderer, &'static str> {
+    pub fn typed_new(window: &Window, imgui: &mut ImGuiContext) -> Result<TypedRenderer, &'static str> {
         // Create An Instance
         let instance = back::Instance::create(window.name, 1);
         // Create A Surface
         let surface = instance.create_surface(&window.window);
         // Create A renderer
-        Ok(TypedRenderer::new(&window.window, instance, surface)?)
+        Ok(TypedRenderer::new(&window.window, instance, surface, imgui)?)
     }
 
     pub fn new(
         window: &WinitWindow,
         instance: I,
         mut surface: <I::Backend as Backend>::Surface,
+        imgui: &mut ImGuiContext,
     ) -> Result<Self, &'static str> {
         let adapter = instance
             .enumerate_adapters()
@@ -111,7 +112,7 @@ impl<I: Instance> Renderer<I> {
             .ok_or("Couldn't find a graphical adapter!")?;
 
         // open it up!
-        let (mut device, queue_group) = {
+        let (mut device, mut queue_group) = {
             let queue_family = adapter
                 .queue_families
                 .iter()
@@ -325,7 +326,17 @@ impl<I: Instance> Renderer<I> {
 
         // CREATE PIPELINES
         let mut pipeline_bundles = ArrayVec::new();
-        pipeline_bundles.push(Self::create_pipeline(&mut device, extent, &render_pass)?);
+        pipeline_bundles.push(Self::create_pipeline(&mut device, &extent, &render_pass)?);
+        let (imgui_pipeline, _image_loaded) = Self::create_imgui_pipeline(
+            &device,
+            &adapter,
+            imgui,
+            &mut command_pool,
+            &mut queue_group.queues[0],
+            &extent,
+            &render_pass,
+        )?;
+        pipeline_bundles.push(imgui_pipeline);
 
         // CREATE VERT-INDEX BUFFERS
         let mut vertex_index_buffer_bundles = ArrayVec::new();
@@ -377,7 +388,7 @@ impl<I: Instance> Renderer<I> {
 
     fn create_pipeline(
         device: &mut <I::Backend as Backend>::Device,
-        extent: Extent2D,
+        extent: &Extent2D,
         render_pass: &<I::Backend as Backend>::RenderPass,
     ) -> Result<(PipelineBundle<I::Backend>), &'static str> {
         const VERTEX_SOURCE: &'static str = include_str!("shaders/default_vert.vert");
@@ -561,10 +572,13 @@ impl<I: Instance> Renderer<I> {
     }
 
     #[allow(dead_code)]
-    fn create_imgui_pipeline(
-        &mut self,
+    fn create_imgui_pipeline<C: Capability + Supports<Transfer>>(
+        device: &<I::Backend as Backend>::Device,
+        adapter: &Adapter<I::Backend>,
         imgui: &mut ImGuiContext,
-        extent: Extent2D,
+        command_pool: &mut CommandPool<I::Backend, C>,
+        command_queue: &mut CommandQueue<I::Backend, C>,
+        extent: &Extent2D,
         render_pass: &<I::Backend as Backend>::RenderPass,
     ) -> Result<(PipelineBundle<I::Backend>, LoadedImage<I::Backend>), &'static str> {
         const IMGUI_VERT_SOURCE: &'static str = include_str!("shaders/imgui_vert.vert");
@@ -598,13 +612,13 @@ impl<I: Instance> Renderer<I> {
             })?;
 
         let vertex_shader_module = unsafe {
-            self.device
+            device
                 .create_shader_module(vertex_compile_artifact.as_binary())
                 .map_err(|_| "Couldn't make the vertex module!")?
         };
 
         let fragment_shader_module = unsafe {
-            self.device
+            device
                 .create_shader_module(fragment_compile_artifact.as_binary())
                 .map_err(|_| "Couldn't make the fragment module!")?
         };
@@ -713,35 +727,44 @@ impl<I: Instance> Renderer<I> {
             depth_bounds: None,
         };
 
-        let sampler = unsafe {
-            self.device
-                .create_sampler(SamplerInfo::new(image::Filter::Linear, image::WrapMode::Clamp))
-                .map_err(|_| "Couldn't create a sampler!")?
-        };
-
         let descriptor_set_layout = unsafe {
-            self.device
+            device
                 .create_descriptor_set_layout(
-                    &[DescriptorSetLayoutBinding {
-                        binding: 0,
-                        ty: DescriptorType::CombinedImageSampler,
-                        count: 1,
-                        stage_flags: ShaderStageFlags::FRAGMENT,
-                        immutable_samplers: true,
-                    }],
-                    Some(&sampler),
+                    &[
+                        DescriptorSetLayoutBinding {
+                            binding: 0,
+                            ty: DescriptorType::SampledImage,
+                            count: 1,
+                            stage_flags: ShaderStageFlags::FRAGMENT,
+                            immutable_samplers: false,
+                        },
+                        DescriptorSetLayoutBinding {
+                            binding: 1,
+                            ty: DescriptorType::Sampler,
+                            count: 1,
+                            stage_flags: ShaderStageFlags::FRAGMENT,
+                            immutable_samplers: false,
+                        },
+                    ],
+                    &[],
                 )
                 .map_err(|_| "Couldn't make a DescriptorSetLayout!")?
         };
 
         let mut descriptor_pool = unsafe {
-            self.device
+            device
                 .create_descriptor_pool(
                     1,
-                    &[DescriptorRangeDesc {
-                        ty: DescriptorType::CombinedImageSampler,
-                        count: 1,
-                    }],
+                    &[
+                        DescriptorRangeDesc {
+                            ty: DescriptorType::SampledImage,
+                            count: 1,
+                        },
+                        DescriptorRangeDesc {
+                            ty: DescriptorType::Sampler,
+                            count: 1,
+                        },
+                    ],
                     gfx_hal::pso::DescriptorPoolCreateFlags::empty(),
                 )
                 .map_err(|_| "Couldn't create a descriptor pool!")?
@@ -762,10 +785,10 @@ impl<I: Instance> Renderer<I> {
         } = fonts.build_rgba32_texture();
 
         let imgui_image = LoadedImage::new(
-            &self.adapter,
-            &self.device,
-            &mut self.command_pool,
-            &mut self.queue_group.queues[0],
+            adapter,
+            device,
+            command_pool,
+            command_queue,
             descriptor_set,
             font_data,
             font_width as usize,
@@ -774,9 +797,9 @@ impl<I: Instance> Renderer<I> {
 
         let push_constants = vec![(ShaderStageFlags::VERTEX, 0..4)];
         let pipeline_layout = unsafe {
-            self.device
+            device
                 .create_pipeline_layout(Some(&descriptor_set_layout), push_constants)
-                .map_err(|_| "Couldn't create a pipeline layout")?
+                .map_err(|_| "Couldn't create the DearImGui pipeline layout")?
         };
 
         let imgui_pipeline = {
@@ -800,9 +823,9 @@ impl<I: Instance> Renderer<I> {
             };
 
             unsafe {
-                self.device
+                device
                     .create_graphics_pipeline(&desc, None)
-                    .map_err(|_| "Couldn't create a graphics pipeline!")?
+                    .map_err(|_| "Couldn't create the DearImGui graphics pipeline!")?
             }
         };
 
@@ -1099,7 +1122,7 @@ impl<I: Instance> Renderer<I> {
 
             self.pipeline_bundles.push(Self::create_pipeline(
                 &mut self.device,
-                extent,
+                &extent,
                 &self.render_pass,
             )?);
 

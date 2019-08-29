@@ -13,6 +13,7 @@ pub struct Game {
     renderer: Option<TypedRenderer>,
     camera: Camera,
     entities: Vec<Vec<Entity>>,
+    dear_imgui: Imgui,
 }
 
 impl Game {
@@ -20,7 +21,9 @@ impl Game {
         let window = Window::new(DEFAULT_SIZE).map_err(|_| "Couldn't create the window!")?;
         let user_input = UserInput::new();
 
-        let renderer = TypedRenderer::typed_new(&window)?;
+        let mut dear_imgui = Imgui::new(&window);
+
+        let renderer = TypedRenderer::typed_new(&window, &mut dear_imgui.imgui)?;
         let camera = Camera::new_at_position(Vec2::new(0.0, 0.0), 1.0);
 
         // Initialize Entities...
@@ -48,16 +51,13 @@ impl Game {
 
         trace!("Entities: {:#?}", entities);
 
-        let mut imgui = Imgui::new(&window);
-        let ui = imgui.begin_frame(&window);
-        ui.draw(&window);
-
         Ok(Game {
             window,
             user_input,
             renderer: Some(renderer),
             entities,
             camera,
+            dear_imgui,
         })
     }
 
@@ -162,7 +162,7 @@ impl Game {
                         error!("Auo-restarting Renderer...");
 
                         self.renderer = None;
-                        let ret = TypedRenderer::typed_new(&self.window);
+                        let ret = TypedRenderer::typed_new(&self.window, &mut self.dear_imgui.imgui);
 
                         match ret {
                             Ok(new_value) => {
