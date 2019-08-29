@@ -138,12 +138,21 @@ impl Game {
 
     fn render(&mut self) -> bool {
         if let Some(renderer) = &mut self.renderer {
-            match renderer.draw_quad_frame(
-                &mut self.entities,
-                &self.camera.position,
-                self.camera.scale,
-                self.camera.aspect_ratio,
-            ) {
+            let result = {
+                let size: Vec2 = self.dear_imgui.imgui.io().display_size.into();
+                let ui_frame = self.dear_imgui.begin_frame(&self.window);
+                ui_frame.prepare_draw(&self.window);
+                
+                renderer.draw_quad_frame(
+                    &mut self.entities,
+                    &self.camera.position,
+                    self.camera.scale,
+                    self.camera.aspect_ratio,
+                    ui_frame.ui.render(),
+                    size,
+                )
+            };
+            match result {
                 Ok(sub_optimal) => {
                     if let Some(_) = sub_optimal {
                         Game::recreate_swapchain(renderer, &self.window)
@@ -157,7 +166,7 @@ impl Game {
                         Game::recreate_swapchain(renderer, &self.window)
                     }
 
-                    DrawingError::ResetFence | DrawingError::WaitOnFence => {
+                    DrawingError::ResetFence | DrawingError::WaitOnFence | DrawingError::BufferCreation => {
                         error!("Rendering Error: {:?}", e);
                         error!("Auo-restarting Renderer...");
 

@@ -21,7 +21,7 @@ use gfx_hal::{
     window::{Extent2D, PresentMode, Suboptimal, Surface, Swapchain, SwapchainConfig},
     Backend, Features, Gpu, Graphics, IndexType, Instance, Primitive, QueueFamily,
 };
-use imgui::{Context as ImGuiContext, DrawData, DrawVert};
+use imgui::{Context as ImGuiContext, DrawData, DrawVert, DrawIdx};
 use std::{borrow::Cow, mem, ops::Deref};
 use winit::Window as WinitWindow;
 
@@ -58,7 +58,7 @@ pub struct Renderer<I: Instance> {
     // Pipeline nonsense
     pipeline_bundles: ArrayVec<[PipelineBundle<I::Backend>; PIPELINE_SIZE]>,
     vertex_index_buffer_bundles: ArrayVec<[VertexIndexPairBufferBundle<I::Backend>; PIPELINE_SIZE]>,
-    imgui_image: Option<LoadedImage<I::Backend>>,
+    images: ArrayVec<[LoadedImage<I::Backend>; 1]>,
 
     // GPU Swapchain
     swapchain: ManuallyDrop<<I::Backend as Backend>::Swapchain>,
@@ -375,7 +375,7 @@ impl<I: Instance> Renderer<I> {
             vertex_index_buffer_bundles,
 
             pipeline_bundles,
-            imgui_image: None,
+            images: ArrayVec::new(),
         })
     }
 
@@ -711,7 +711,7 @@ impl<I: Instance> Renderer<I> {
                 rect: extent.to_extent().rect(),
                 depth: (0.0..1.0),
             }),
-            scissor: Some(extent.to_extent().rect()),
+            scissor: None,
             blend_color: None,
             depth_bounds: None,
         };
@@ -822,7 +822,7 @@ impl<I: Instance> Renderer<I> {
             font_height as usize,
         )?;
 
-        self.imgui_image = Some(imgui_image);
+        self.images.push(imgui_image);
         Ok(())
     }
 
@@ -832,7 +832,8 @@ impl<I: Instance> Renderer<I> {
         camera_position: &Vec2,
         camera_scale: f32,
         aspect_ratio: f32,
-        draw_data: DrawData,
+        draw_data: &DrawData,
+        imgui_dimensions: Vec2,
     ) -> Result<Option<Suboptimal>, DrawingError> {
         // SETUP FOR THIS FRAME
         let image_available = &self.image_available_semaphores[self.current_frame];
@@ -927,18 +928,18 @@ impl<I: Instance> Renderer<I> {
 
                 // Draw ImGUI GML
                 {
-                    let this_vertex_buffer = BufferBundle::new(
+                    let mut this_vertex_buffer = BufferBundle::new(
                         &self.adapter,
                         &self.device,
-                        draw_data.total_vtx_count as u64,
+                        (draw_data.total_vtx_count as usize * mem::size_of::<DrawVert>()) as u64,
                         buffer::Usage::VERTEX,
                     )
                     .map_err(|_| DrawingError::BufferCreation)?;
 
-                    let this_index_buffer = BufferBundle::new(
+                    let mut this_index_buffer = BufferBundle::new(
                         &self.adapter,
                         &self.device,
-                        draw_data.total_idx_count as u64,
+                        (draw_data.total_idx_count as usize * mem::size_of::<DrawIdx>()) as u64,
                         buffer::Usage::INDEX,
                     )
                     .map_err(|_| DrawingError::BufferCreation)?;
@@ -950,7 +951,7 @@ impl<I: Instance> Renderer<I> {
                     encoder.bind_graphics_descriptor_sets(
                         &imgui_pipeline.pipeline_layout,
                         0,
-                        Some(&imgui_pipeline.descriptor_set_layout),
+                        Some(self.images[0].descriptor_set.deref()),
                         None as Option<u32>,
                     );
 
@@ -966,7 +967,7 @@ impl<I: Instance> Renderer<I> {
                     #[rustfmt::skip]
                     let push_constants: [u32; 4] = std::mem::transmute([
                         // scale
-                        2.0 / width,    2.0 / height,
+                        2.0 / imgui_dimensions.x,    2.0 / imgui_dimensions.y,
                         //offset
                         -1.0,           -1.0,
                     ]);

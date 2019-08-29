@@ -61,13 +61,7 @@ pub struct UiHandler<'a> {
 }
 
 impl<'a> UiHandler<'a> {
-    pub fn draw(self, window: &WinitWindow) {
+    pub fn prepare_draw(&self, window: &WinitWindow) {
         self.platform.prepare_render(&self.ui, &window.window);
-        let draw_data = self.ui.render();
-
-        println!(
-            "Draw data has {} idx, {} vtx",
-            draw_data.total_idx_count, draw_data.total_vtx_count
-        );
     }
 }

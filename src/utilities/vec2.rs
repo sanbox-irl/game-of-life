@@ -148,3 +148,9 @@ impl std::ops::MulAssign<f32> for Vec2 {
         self.y = self.y * rhs;
     }
 }
+
+impl From<[f32; 2]> for Vec2 {
+    fn from(w: [f32; 2]) -> Vec2 {
+        Vec2 { x: w[0], y: w[1] }
+    }
+}
