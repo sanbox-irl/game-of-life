@@ -3,7 +3,7 @@ use core::mem::ManuallyDrop;
 use gfx_hal::{
     adapter::{Adapter, PhysicalDevice},
     buffer::{self, IndexBufferView},
-    command::{ClearColor, ClearValue, CommandBuffer, MultiShot, Primary},
+    command::{ClearColor, ClearValue, CommandBuffer, MultiShot, Primary, RenderPassInlineEncoder},
     device::Device,
     format::{Aspects, ChannelType, Format, Swizzle},
     image::{Extent, Layout, SubresourceRange, Usage, ViewKind},
@@ -20,7 +20,7 @@ use gfx_hal::{
     window::{Extent2D, PresentMode, Suboptimal, Surface, Swapchain, SwapchainConfig},
     Backend, Features, Gpu, Graphics, IndexType, Instance, Primitive, QueueFamily,
 };
-use imgui::{Context as ImGuiContext, DrawData, DrawIdx, DrawVert, TextureId};
+use imgui::{Context as ImGuiContext, DrawIdx, DrawVert, TextureId};
 use std::{borrow::Cow, mem, ops::Deref};
 use winit::Window as WinitWindow;
 
@@ -32,8 +32,9 @@ use gfx_backend_metal as back;
 use gfx_backend_vulkan as back;
 
 use super::{
-    BufferBundle, BufferBundleError, DrawingError, Entity, LoadedImage, PipelineBundle, Vec2, Vertex,
-    VertexIndexPairBufferBundle, Window, QUAD_INDICES, QUAD_VERTICES,
+    BufferBundle, BufferBundleError, DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, LoadedImage,
+    PipelineBundle, RendererCommands, Vertex, VertexIndexPairBufferBundle, Window, QUAD_INDICES,
+    QUAD_VERTICES,
 };
 
 const VERTEX_PUSH_CONSTANTS_SIZE: u32 = 6;
@@ -94,7 +95,7 @@ impl<I: Instance> Renderer<I> {
         renderer.allocate_imgui_textures(imgui)?;
         renderer
             .allocate_imgui_buffers()
-            .map_err(|_| "Error allocating the ImGui Buffers!");
+            .map_err(|_| "Error allocating the ImGui Buffers!")?;
         Ok(renderer)
     }
 
@@ -810,14 +811,9 @@ impl<I: Instance> Renderer<I> {
         Ok(())
     }
 
-    pub fn draw_quad_frame(
+    pub fn render<'a>(
         &mut self,
-        entities: &mut [Vec<Entity>],
-        camera_position: &Vec2,
-        camera_scale: f32,
-        aspect_ratio: f32,
-        draw_data: &DrawData,
-        imgui_dimensions: Vec2,
+        renderer_commands: RendererCommands<'a>,
     ) -> Result<Option<Suboptimal>, DrawingError> {
         // SETUP FOR THIS FRAME
         let image_available = &self.image_available_semaphores[self.current_frame];
@@ -863,151 +859,25 @@ impl<I: Instance> Renderer<I> {
                     TRIANGLE_CLEAR.iter(),
                 );
 
-                // DRAW (s)QUADS
-                {
-                    let quad_pipeline = &self.pipeline_bundles[QUAD_DATA];
-                    let buffer_bundle = &self.vertex_index_buffer_bundles[QUAD_DATA];
-
-                    encoder.bind_graphics_pipeline(&quad_pipeline.graphics_pipeline);
-                    // Bind the vertex buffers in
-                    encoder.bind_vertex_buffers(0, Some((buffer_bundle.vertex_buffer.buffer.deref(), 0)));
-                    encoder.bind_index_buffer(IndexBufferView {
-                        buffer: &buffer_bundle.index_buffer.buffer,
-                        offset: 0,
-                        index_type: IndexType::U16,
-                    });
-
-                    let mut push_constants: [u32; VERTEX_PUSH_CONSTANTS_SIZE as usize] =
-                        [0; VERTEX_PUSH_CONSTANTS_SIZE as usize];
-                    push_constants[2] = camera_position.x.to_bits();
-                    push_constants[3] = camera_position.y.to_bits();
-                    push_constants[4] = camera_scale.to_bits();
-                    push_constants[5] = aspect_ratio.to_bits();
-
-                    for row in entities.iter_mut() {
-                        for entity in row.iter_mut() {
-                            let bits = entity.position.to_bits();
-                            push_constants[0] = bits[0];
-                            push_constants[1] = bits[1];
-
-                            encoder.push_graphics_constants(
-                                &quad_pipeline.pipeline_layout,
-                                ShaderStageFlags::VERTEX,
-                                0,
-                                &push_constants,
-                            );
-
-                            encoder.push_graphics_constants(
-                                &quad_pipeline.pipeline_layout,
-                                ShaderStageFlags::FRAGMENT,
-                                mem::size_of::<u32>() as u32 * FRAG_PUSH_CONSTANTS_START,
-                                &entity.state.to_color_bits(),
-                            );
-
-                            encoder.draw_indexed(0..6, 0, 0..1);
-                        }
-                    }
+                if let Some(game_world_commands) = renderer_commands.game_world_draw_commands {
+                    Self::draw_game_world(
+                        &mut encoder,
+                        game_world_commands,
+                        &self.pipeline_bundles[QUAD_DATA],
+                        &self.vertex_index_buffer_bundles[QUAD_DATA],
+                    )?;
                 }
 
-                // Draw ImGUI GML
-                {
-                    // Update our Buffer Sizes if Necessary
-                    self.vertex_index_buffer_bundles[IMGUI_DATA]
-                        .update_size(
-                            (draw_data.total_vtx_count as usize * mem::size_of::<DrawVert>()) as u64,
-                            (draw_data.total_idx_count as usize * mem::size_of::<DrawIdx>()) as u64,
-                            &self.device,
-                            &self.adapter,
-                        )
-                        .map_err(|_| DrawingError::BufferCreationError)?;
-
-                    // Check our Buffers
-                    let VertexIndexPairBufferBundle {
-                        vertex_buffer: imgui_vertex_buffer,
-                        index_buffer: imgui_index_buffer,
-                    } = &mut self.vertex_index_buffer_bundles[IMGUI_DATA];
-
-                    // Bind pipeline
-                    let imgui_pipeline = &self.pipeline_bundles[IMGUI_DATA];
-                    encoder.bind_graphics_pipeline(&imgui_pipeline.graphics_pipeline);
-
-                    // descriptor SET needs to be here...this is from the texture.
-                    encoder.bind_graphics_descriptor_sets(
-                        &imgui_pipeline.pipeline_layout,
-                        0,
-                        Some(self.images[0].descriptor_set.deref()),
-                        None as Option<u32>,
-                    );
-
-                    // Bind vertex and index buffers
-                    encoder.bind_vertex_buffers(0, Some((imgui_vertex_buffer.buffer.deref(), 0)));
-                    encoder.bind_index_buffer(buffer::IndexBufferView {
-                        buffer: &imgui_index_buffer.buffer,
-                        offset: 0,
-                        index_type: IndexType::U16,
-                    });
-
-                    // Set push constants
-                    #[rustfmt::skip]
-                    let push_constants: [u32; 4] = std::mem::transmute([
-                        // scale
-                        2.0 / imgui_dimensions.x,    2.0 / imgui_dimensions.y,
-                        //offset
-                        -1.0,           -1.0,
-                    ]);
-
-                    let viewport = Viewport {
-                        rect: Rect {
-                            x: 0,
-                            y: 0,
-                            w: imgui_dimensions.x as i16,
-                            h: imgui_dimensions.y as i16,
-                        },
-                        depth: 0.0..1.0,
-                    };
-                    encoder.set_viewports(0, &[viewport]);
-
-                    encoder.push_graphics_constants(
-                        &imgui_pipeline.pipeline_layout,
-                        ShaderStageFlags::VERTEX,
-                        0,
-                        &push_constants,
-                    );
-
-                    let mut vertex_offset = 0;
-                    let mut index_offset = 0;
-
-                    // Iterate over drawlists
-                    for list in draw_data.draw_lists() {
-                        // Update vertex and index buffers
-                        imgui_vertex_buffer.update_buffer(list.vtx_buffer(), vertex_offset);
-                        imgui_index_buffer.update_buffer(list.idx_buffer(), index_offset);
-
-                        for cmd in list.commands() {
-                            if let imgui::DrawCmd::Elements { count, cmd_params } = cmd {
-                                // Calculate the scissor
-                                let scissor = Rect {
-                                    x: cmd_params.clip_rect[0] as i16,
-                                    y: cmd_params.clip_rect[1] as i16,
-                                    w: (cmd_params.clip_rect[2] - cmd_params.clip_rect[0]) as i16,
-                                    h: (cmd_params.clip_rect[3] - cmd_params.clip_rect[1]) as i16,
-                                };
-                                encoder.set_scissors(0, &[scissor]);
-
-                                // Actually draw things
-                                encoder.draw_indexed(
-                                    index_offset as u32..(index_offset + count) as u32,
-                                    vertex_offset as i32,
-                                    0..1,
-                                );
-
-                                index_offset += count as usize;
-                            }
-                        }
-
-                        // Increment offsets
-                        vertex_offset += list.vtx_buffer().len();
-                    }
+                if let Some(imgui_commands) = renderer_commands.imgui_draw_commands {
+                    Self::draw_imgui(
+                        &mut encoder,
+                        imgui_commands,
+                        &self.pipeline_bundles[IMGUI_DATA],
+                        &mut self.vertex_index_buffer_bundles[IMGUI_DATA],
+                        &self.device,
+                        &self.adapter,
+                        self.images[0].descriptor_set.deref(),
+                    )?;
                 }
             }
             buffer.finish();
@@ -1032,6 +902,163 @@ impl<I: Instance> Renderer<I> {
                 .present(the_command_queue, i_u32, present_wait_semaphores)
                 .map_err(|_| DrawingError::PresentIntoSwapchain)
         }
+    }
+
+    unsafe fn draw_game_world<'a>(
+        encoder: &mut RenderPassInlineEncoder<'_, I::Backend>,
+        game_world: GameWorldDrawCommands<'_>,
+        quad_pipeline: &'a PipelineBundle<I::Backend>,
+        buffer_bundle: &'a VertexIndexPairBufferBundle<I::Backend>,
+    ) -> Result<(), DrawingError> {
+        encoder.bind_graphics_pipeline(&quad_pipeline.graphics_pipeline);
+        // Bind the vertex buffers in
+        encoder.bind_vertex_buffers(0, Some((buffer_bundle.vertex_buffer.buffer.deref(), 0)));
+        encoder.bind_index_buffer(IndexBufferView {
+            buffer: &buffer_bundle.index_buffer.buffer,
+            offset: 0,
+            index_type: IndexType::U16,
+        });
+
+        let mut push_constants: [u32; VERTEX_PUSH_CONSTANTS_SIZE as usize] =
+            [0; VERTEX_PUSH_CONSTANTS_SIZE as usize];
+        push_constants[2] = game_world.camera_position.x.to_bits();
+        push_constants[3] = game_world.camera_position.y.to_bits();
+        push_constants[4] = game_world.camera_scale.to_bits();
+        push_constants[5] = game_world.aspect_ratio.to_bits();
+
+        for row in game_world.entities.iter_mut() {
+            for entity in row.iter_mut() {
+                let bits = entity.position.to_bits();
+                push_constants[0] = bits[0];
+                push_constants[1] = bits[1];
+
+                encoder.push_graphics_constants(
+                    &quad_pipeline.pipeline_layout,
+                    ShaderStageFlags::VERTEX,
+                    0,
+                    &push_constants,
+                );
+
+                encoder.push_graphics_constants(
+                    &quad_pipeline.pipeline_layout,
+                    ShaderStageFlags::FRAGMENT,
+                    mem::size_of::<u32>() as u32 * FRAG_PUSH_CONSTANTS_START,
+                    &entity.state.to_color_bits(),
+                );
+
+                encoder.draw_indexed(0..6, 0, 0..1);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub unsafe fn draw_imgui<'a>(
+        encoder: &mut RenderPassInlineEncoder<'_, I::Backend>,
+        imgui_data: ImGuiDrawCommands<'_>,
+        imgui_pipeline: &'a PipelineBundle<I::Backend>,
+        buffer_bundle: &'a mut VertexIndexPairBufferBundle<I::Backend>,
+        device: &<I::Backend as Backend>::Device,
+        adapter: &Adapter<I::Backend>,
+        descriptor_set: &<I::Backend as Backend>::DescriptorSet,
+    ) -> Result<(), DrawingError> {
+        buffer_bundle
+            .update_size(
+                (imgui_data.draw_data.total_vtx_count as usize * mem::size_of::<DrawVert>()) as u64,
+                (imgui_data.draw_data.total_idx_count as usize * mem::size_of::<DrawIdx>()) as u64,
+                &device,
+                &adapter,
+            )
+            .map_err(|_| DrawingError::BufferCreationError)?;
+
+        // Check our Buffers
+        let VertexIndexPairBufferBundle {
+            vertex_buffer: imgui_vertex_buffer,
+            index_buffer: imgui_index_buffer,
+        } = buffer_bundle;
+
+        // Bind pipeline
+        encoder.bind_graphics_pipeline(&imgui_pipeline.graphics_pipeline);
+
+        // descriptor SET needs to be here...this is from the texture.
+        encoder.bind_graphics_descriptor_sets(
+            &imgui_pipeline.pipeline_layout,
+            0,
+            Some(descriptor_set),
+            None as Option<u32>,
+        );
+
+        // Bind vertex and index buffers
+        encoder.bind_vertex_buffers(0, Some((imgui_vertex_buffer.buffer.deref(), 0)));
+        encoder.bind_index_buffer(buffer::IndexBufferView {
+            buffer: &imgui_index_buffer.buffer,
+            offset: 0,
+            index_type: IndexType::U16,
+        });
+
+        // Set push constants
+        #[rustfmt::skip]
+        let push_constants: [u32; 4] = std::mem::transmute([
+            // scale
+            2.0 / imgui_data.imgui_dimensions.x,    2.0 / imgui_data.imgui_dimensions.y,
+            //offset
+            -1.0,           -1.0,
+        ]);
+
+        let viewport = Viewport {
+            rect: Rect {
+                x: 0,
+                y: 0,
+                w: imgui_data.imgui_dimensions.x as i16,
+                h: imgui_data.imgui_dimensions.y as i16,
+            },
+            depth: 0.0..1.0,
+        };
+        encoder.set_viewports(0, &[viewport]);
+
+        encoder.push_graphics_constants(
+            &imgui_pipeline.pipeline_layout,
+            ShaderStageFlags::VERTEX,
+            0,
+            &push_constants,
+        );
+
+        let mut vertex_offset = 0;
+        let mut index_offset = 0;
+
+        // Iterate over drawlists
+        for list in imgui_data.draw_data.draw_lists() {
+            // Update vertex and index buffers
+            imgui_vertex_buffer.update_buffer(list.vtx_buffer(), vertex_offset);
+            imgui_index_buffer.update_buffer(list.idx_buffer(), index_offset);
+
+            for cmd in list.commands() {
+                if let imgui::DrawCmd::Elements { count, cmd_params } = cmd {
+                    // Calculate the scissor
+                    let scissor = Rect {
+                        x: cmd_params.clip_rect[0] as i16,
+                        y: cmd_params.clip_rect[1] as i16,
+                        w: (cmd_params.clip_rect[2] - cmd_params.clip_rect[0]) as i16,
+                        h: (cmd_params.clip_rect[3] - cmd_params.clip_rect[1]) as i16,
+                    };
+                    encoder.set_scissors(0, &[scissor]);
+
+                    // Actually draw things
+                    encoder.draw_indexed(
+                        index_offset as u32..(index_offset + count) as u32,
+                        vertex_offset as i32,
+                        0..1,
+                    );
+
+                    index_offset += count as usize;
+                }
+            }
+
+            // Increment offsets
+            vertex_offset += list.vtx_buffer().len();
+        }
+
+        Ok(())
     }
 
     pub fn recreate_swapchain(&mut self, window: &WinitWindow) -> Result<(), &'static str> {

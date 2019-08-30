@@ -40,7 +40,7 @@ impl<B: Backend> BufferBundle<B> {
                         && memory_type.properties.contains(Properties::CPU_VISIBLE)
                 })
                 .map(|(id, _)| MemoryTypeId(id))
-                .ok_or(BufferBundleError::Map)?;
+                .ok_or(BufferBundleError::MemoryId)?;
             let memory = device
                 .allocate_memory(memory_type_id, requirements.size)
                 .map_err(|_| BufferBundleError::Allocate)?;

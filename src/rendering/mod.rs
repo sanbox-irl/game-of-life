@@ -16,8 +16,9 @@ macro_rules! manual_new {
 mod buffer_bundle;
 mod loaded_image;
 mod pipeline_bundle;
-mod renderer;
+mod renderer_commands;
 mod vertex;
+mod renderer;
 
 #[derive(Debug)]
 pub enum DrawingError {
@@ -41,8 +42,10 @@ impl std::fmt::Display for DrawingError {
 }
 
 pub use super::ecs::Entity;
-pub use buffer_bundle::{BufferBundle, BufferBundleError, VertexIndexPairBufferBundle};
-pub use loaded_image::LoadedImage;
-pub use pipeline_bundle::PipelineBundle;
-pub use renderer::TypedRenderer;
+pub use buffer_bundle::*;
+pub use loaded_image::*;
+pub use pipeline_bundle::*;
+pub use renderer_commands::*;
 pub use vertex::*;
+pub use renderer_commands::RendererCommands;
+pub use renderer::TypedRenderer;

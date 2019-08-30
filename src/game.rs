@@ -1,5 +1,7 @@
 use super::ecs::{rule_setter, Camera, Entity, Imgui, State, UserInput, Window};
-use super::rendering::{DrawingError, TypedRenderer};
+use super::rendering::{
+    DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands, TypedRenderer,
+};
 use super::utilities::{Vec2, Vec2Int};
 use std::time::Instant;
 use winit::VirtualKeyCode;
@@ -142,15 +144,21 @@ impl Game {
                 let size: Vec2 = self.dear_imgui.imgui.io().display_size.into();
                 let ui_frame = self.dear_imgui.begin_frame(&self.window);
                 ui_frame.prepare_draw(&self.window);
-                
-                renderer.draw_quad_frame(
-                    &mut self.entities,
-                    &self.camera.position,
-                    self.camera.scale,
-                    self.camera.aspect_ratio,
-                    ui_frame.ui.render(),
-                    size,
-                )
+
+                let instructions = RendererCommands {
+                    game_world_draw_commands: Some(GameWorldDrawCommands {
+                        aspect_ratio: self.camera.aspect_ratio,
+                        camera_position: &self.camera.position,
+                        camera_scale: self.camera.scale,
+                        entities: &mut self.entities,
+                    }),
+                    imgui_draw_commands: Some(ImGuiDrawCommands {
+                        draw_data: ui_frame.ui.render(),
+                        imgui_dimensions: size,
+                    }),
+                };
+
+                renderer.render(instructions)
             };
             match result {
                 Ok(sub_optimal) => {
@@ -166,7 +174,9 @@ impl Game {
                         Game::recreate_swapchain(renderer, &self.window)
                     }
 
-                    DrawingError::ResetFence | DrawingError::WaitOnFence | DrawingError::BufferCreationError  => {
+                    DrawingError::ResetFence
+                    | DrawingError::WaitOnFence
+                    | DrawingError::BufferCreationError => {
                         error!("Rendering Error: {:?}", e);
                         error!("Auo-restarting Renderer...");
 
