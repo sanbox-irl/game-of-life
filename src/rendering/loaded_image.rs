@@ -51,7 +51,8 @@ impl<B: Backend> LoadedImage<B> {
             //      and a trsnfer_src image
             let required_bytes = (row_pitch * height) as u64;
             let staging_bundle =
-                BufferBundle::new(&adapter, device, required_bytes, buffer::Usage::TRANSFER_SRC)?;
+                BufferBundle::new(&adapter, device, required_bytes, buffer::Usage::TRANSFER_SRC)
+                    .map_err(|_| "Buffer Creation Errror!")?;
 
             // 2.   Use a mapping writer to put the image data into the buffer
             let mut writer = device

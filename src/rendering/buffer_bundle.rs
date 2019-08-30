@@ -6,8 +6,7 @@ use gfx_hal::{
     memory::{Properties, Requirements},
     Backend,
 };
-use std::marker::PhantomData;
-use std::mem;
+use std::{marker::PhantomData, mem};
 
 pub struct BufferBundle<B: Backend> {
     pub buffer: ManuallyDrop<B::Buffer>,
@@ -23,11 +22,11 @@ impl<B: Backend> BufferBundle<B> {
         device: &B::Device,
         size: u64,
         usage: buffer::Usage,
-    ) -> Result<Self, &'static str> {
+    ) -> Result<Self, BufferBundleError> {
         unsafe {
             let mut buffer = device
                 .create_buffer(size, usage)
-                .map_err(|_| "Couldn't create a buffer for the vertices")?;
+                .map_err(|_| BufferBundleError::Creation)?;
 
             let requirements = device.get_buffer_requirements(&buffer);
             let memory_type_id = adapter
@@ -41,18 +40,18 @@ impl<B: Backend> BufferBundle<B> {
                         && memory_type.properties.contains(Properties::CPU_VISIBLE)
                 })
                 .map(|(id, _)| MemoryTypeId(id))
-                .ok_or("Couldn't find a memory type to support the vertex buffer!")?;
+                .ok_or(BufferBundleError::Map)?;
             let memory = device
                 .allocate_memory(memory_type_id, requirements.size)
-                .map_err(|_| "Couldn't allocate vertex buffer memory")?;
+                .map_err(|_| BufferBundleError::Allocate)?;
 
             device
                 .bind_buffer_memory(&memory, 0, &mut buffer)
-                .map_err(|_| "Couldn't bind the buffer memory!")?;
+                .map_err(|_| BufferBundleError::Bind)?;
 
             let mapped = device
                 .map_memory(&memory, 0..requirements.size)
-                .map_err(|_| "Couldn't get a map to the buffer's location")?;
+                .map_err(|_| BufferBundleError::Map)?;
 
             Ok(Self {
                 buffer: manual_new!(buffer),
@@ -86,8 +85,55 @@ impl<B: Backend> BufferBundle<B> {
         device.free_memory(ManuallyDrop::into_inner(read(&self.memory)));
     }
 }
+#[derive(Debug)]
+pub enum BufferBundleError {
+    Creation,
+    MemoryId,
+    Allocate,
+    Bind,
+    Map,
+}
+
+impl std::fmt::Display for BufferBundleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Error allocating the Buffer Bundle!")
+    }
+}
 
 pub struct VertexIndexPairBufferBundle<B: Backend> {
     pub vertex_buffer: BufferBundle<B>,
     pub index_buffer: BufferBundle<B>,
+}
+
+impl<B: Backend> VertexIndexPairBufferBundle<B> {
+    pub fn update_size(
+        &mut self,
+        vertex_size: u64,
+        index_size: u64,
+        device: &B::Device,
+        adapter: &Adapter<B>,
+    ) -> Result<bool, BufferBundleError> {
+        if self.vertex_buffer.has_room(vertex_size) == false
+            || self.index_buffer.has_room(index_size) == false
+        {
+            let new_vertex = BufferBundle::new(adapter, device, vertex_size, buffer::Usage::VERTEX)?;
+            let new_index = BufferBundle::new(adapter, device, index_size, buffer::Usage::VERTEX)?;
+
+            self.manually_drop(device);
+
+            self.vertex_buffer = new_vertex;
+            self.index_buffer = new_index;
+
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    pub fn manually_drop(&self, device: &B::Device) {
+        unsafe {
+            self.vertex_buffer.manually_drop(device);
+            self.index_buffer.manually_drop(device);
+        }
+    }
 }

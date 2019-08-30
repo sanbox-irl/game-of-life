@@ -25,7 +25,7 @@ pub enum DrawingError {
     WaitOnFence,
     ResetFence,
     PresentIntoSwapchain,
-    BufferCreationError
+    BufferCreationError,
 }
 
 impl std::error::Error for DrawingError {
@@ -41,7 +41,7 @@ impl std::fmt::Display for DrawingError {
 }
 
 pub use super::ecs::Entity;
-pub use buffer_bundle::{BufferBundle, VertexIndexPairBufferBundle};
+pub use buffer_bundle::{BufferBundle, BufferBundleError, VertexIndexPairBufferBundle};
 pub use loaded_image::LoadedImage;
 pub use pipeline_bundle::PipelineBundle;
 pub use renderer::TypedRenderer;

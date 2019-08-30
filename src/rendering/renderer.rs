@@ -1,4 +1,3 @@
-use super::PipelineBundle;
 use arrayvec::ArrayVec;
 use core::mem::ManuallyDrop;
 use gfx_hal::{
@@ -22,7 +21,6 @@ use gfx_hal::{
     Backend, Features, Gpu, Graphics, IndexType, Instance, Primitive, QueueFamily,
 };
 use imgui::{Context as ImGuiContext, DrawData, DrawIdx, DrawVert, TextureId};
-use std::convert::TryFrom;
 use std::{borrow::Cow, mem, ops::Deref};
 use winit::Window as WinitWindow;
 
@@ -34,8 +32,8 @@ use gfx_backend_metal as back;
 use gfx_backend_vulkan as back;
 
 use super::{
-    BufferBundle, DrawingError, Entity, LoadedImage, Vec2, Vertex, VertexIndexPairBufferBundle, Window,
-    QUAD_INDICES, QUAD_VERTICES,
+    BufferBundle, BufferBundleError, DrawingError, Entity, LoadedImage, PipelineBundle, Vec2, Vertex,
+    VertexIndexPairBufferBundle, Window, QUAD_INDICES, QUAD_VERTICES,
 };
 
 const VERTEX_PUSH_CONSTANTS_SIZE: u32 = 6;
@@ -94,7 +92,9 @@ impl<I: Instance> Renderer<I> {
         let mut renderer = TypedRenderer::new(&window.window, instance, surface)?;
         // Allocate our Textures -- spin this out to another method if we ever make another texture
         renderer.allocate_imgui_textures(imgui)?;
-        renderer.allocate_imgui_buffers()?;
+        renderer
+            .allocate_imgui_buffers()
+            .map_err(|_| "Error allocating the ImGui Buffers!");
         Ok(renderer)
     }
 
@@ -338,7 +338,8 @@ impl<I: Instance> Renderer<I> {
             &device,
             mem::size_of_val(&QUAD_VERTICES) as u64,
             buffer::Usage::VERTEX,
-        )?;
+        )
+        .map_err(|_| "Error Allocating iconic Quad vert buffer!")?;
         Renderer::<I>::bind_to_memory(&mut device, &vertex_buffer, &QUAD_VERTICES)?;
 
         let index_buffer = BufferBundle::new(
@@ -346,7 +347,8 @@ impl<I: Instance> Renderer<I> {
             &device,
             mem::size_of_val(&QUAD_INDICES) as u64,
             buffer::Usage::INDEX,
-        )?;
+        )
+        .map_err(|_| "Error Allocating iconic Quad idx buffer!")?;
         Renderer::<I>::bind_to_memory(&mut device, &index_buffer, &QUAD_INDICES)?;
 
         vertex_index_buffer_bundles.push(VertexIndexPairBufferBundle {
@@ -784,7 +786,7 @@ impl<I: Instance> Renderer<I> {
         Ok(())
     }
 
-    fn allocate_imgui_buffers(&mut self) -> Result<(), &'static str> {
+    fn allocate_imgui_buffers(&mut self) -> Result<(), BufferBundleError> {
         let vertex_buffer = BufferBundle::new(
             &self.adapter,
             &self.device,
@@ -909,22 +911,15 @@ impl<I: Instance> Renderer<I> {
 
                 // Draw ImGUI GML
                 {
-                    let size = u64::try_from(
-                        usize::try_from(draw_data.total_vtx_count).unwrap() * mem::size_of::<DrawVert>(),
-                    )
-                    .unwrap();
-                    if self.vertex_index_buffer_bundles[IMGUI_DATA].vertex_buffer.has_room(size) == false {
-                        let new_buffer =
-                            BufferBundle::new(&self.adapter, &self.device, size, buffer::Usage::VERTEX)
-                                .map_err(|_| DrawingError::BufferCreationError)?;
-
-                        self.vertex_index_buffer_bundles[IMGUI_DATA].vertex_buffer = new_buffer;
-                    }
-
-                    if imgui_index_buffer.has_room(u64::try_from(draw_data.total_idx_count).unwrap()) == false
-                    {
-                        // JACK YOU'RE RIGHT HERE
-                    }
+                    // Update our Buffer Sizes if Necessary
+                    self.vertex_index_buffer_bundles[IMGUI_DATA]
+                        .update_size(
+                            (draw_data.total_vtx_count as usize * mem::size_of::<DrawVert>()) as u64,
+                            (draw_data.total_idx_count as usize * mem::size_of::<DrawIdx>()) as u64,
+                            &self.device,
+                            &self.adapter,
+                        )
+                        .map_err(|_| DrawingError::BufferCreationError)?;
 
                     // Check our Buffers
                     let VertexIndexPairBufferBundle {
@@ -1182,7 +1177,6 @@ impl<I: Instance> core::ops::Drop for Renderer<I> {
             for fence in self.in_flight_fences.drain(..) {
                 self.device.destroy_fence(fence);
             }
-
             for semaphore in self.render_finished_semaphores.drain(..) {
                 self.device.destroy_semaphore(semaphore)
             }
@@ -1195,9 +1189,12 @@ impl<I: Instance> core::ops::Drop for Renderer<I> {
             for image_view in self.image_views.drain(..) {
                 self.device.destroy_image_view(image_view);
             }
-
             for this_pipeline in self.pipeline_bundles.drain(..) {
                 this_pipeline.manually_drop(&self.device);
+            }
+
+            for this_bundled_bundle in self.vertex_index_buffer_bundles.drain(..) {
+                this_bundled_bundle.manually_drop(&self.device);
             }
 
             // LAST RESORT STYLE CODE, NOT TO BE IMITATED LIGHTLY
