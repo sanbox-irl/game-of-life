@@ -327,7 +327,7 @@ impl<I: Instance> Renderer<I> {
         // CREATE PIPELINES
         let mut pipeline_bundles = ArrayVec::new();
         pipeline_bundles.push(Self::create_pipeline(&mut device, &extent, &render_pass)?);
-        pipeline_bundles.push(Self::create_imgui_pipeline(&device, &extent, &render_pass)?);
+        pipeline_bundles.push(Self::create_imgui_pipeline(&device, &render_pass)?);
 
         // CREATE VERT-INDEX BUFFERS
         let mut vertex_index_buffer_bundles = ArrayVec::new();
@@ -566,7 +566,6 @@ impl<I: Instance> Renderer<I> {
 
     fn create_imgui_pipeline(
         device: &<I::Backend as Backend>::Device,
-        extent: &Extent2D,
         render_pass: &<I::Backend as Backend>::RenderPass,
     ) -> Result<PipelineBundle<I::Backend>, &'static str> {
         const IMGUI_VERT_SOURCE: &'static str = include_str!("shaders/imgui_vert.vert");
@@ -624,92 +623,12 @@ impl<I: Instance> Renderer<I> {
             },
         );
 
-        let input_assembler = InputAssemblerDesc::new(Primitive::TriangleList);
-
         let shaders = GraphicsShaderSet {
             vertex: vs_entry,
             fragment: Some(fs_entry),
             domain: None,
             geometry: None,
             hull: None,
-        };
-
-        let vertex_buffers = vec![VertexBufferDesc {
-            binding: 0,
-            stride: mem::size_of::<DrawVert>() as ElemStride,
-            rate: VertexInputRate::Vertex,
-        }];
-
-        let attributes = vec![
-            // Position
-            AttributeDesc {
-                location: 0,
-                binding: 0,
-                element: Element {
-                    format: Format::Rg32Sfloat,
-                    offset: offset_of!(DrawVert, pos) as u32,
-                },
-            },
-            // UV
-            AttributeDesc {
-                location: 1,
-                binding: 0,
-                element: Element {
-                    format: Format::Rg32Sfloat,
-                    offset: offset_of!(DrawVert, uv) as u32,
-                },
-            },
-            // Color
-            AttributeDesc {
-                location: 2,
-                binding: 0,
-                element: Element {
-                    format: Format::Rgba8Unorm,
-                    offset: offset_of!(DrawVert, col) as u32,
-                },
-            },
-        ];
-
-        let rasterizer = Rasterizer {
-            depth_clamping: false,
-            polygon_mode: PolygonMode::Fill,
-            cull_face: Face::NONE,
-            front_face: FrontFace::Clockwise,
-            depth_bias: None,
-            conservative: false,
-        };
-
-        let depth_stencil = DepthStencilDesc {
-            depth: None,
-            depth_bounds: false,
-            stencil: None,
-        };
-
-        let blender = {
-            let blend_state = BlendState {
-                color: BlendOp::Add {
-                    src: Factor::One,
-                    dst: Factor::Zero,
-                },
-                alpha: BlendOp::Add {
-                    src: Factor::One,
-                    dst: Factor::Zero,
-                },
-            };
-            BlendDesc {
-                logic_op: Some(LogicOp::Copy),
-                targets: vec![ColorBlendDesc {
-                    mask: ColorMask::ALL,
-                    blend: Some(blend_state),
-                }],
-            }
-        };
-
-        let baked_states = BakedStates {
-            viewport: None,
-            scissor: None,
-            blend_color: None,
-            depth_bounds: None,
         };
 
         let descriptor_set_layout = unsafe {
@@ -763,24 +682,63 @@ impl<I: Instance> Renderer<I> {
         };
 
         let imgui_pipeline = {
-            let desc = GraphicsPipelineDesc {
+            let mut desc = GraphicsPipelineDesc::new(
                 shaders,
-                rasterizer,
-                vertex_buffers,
-                attributes,
-                input_assembler,
-                blender,
-                depth_stencil,
-                multisampling: None,
-                baked_states,
-                layout: &pipeline_layout,
-                subpass: Subpass {
+                Primitive::TriangleList,
+                Rasterizer::FILL,
+                &pipeline_layout,
+                Subpass {
                     index: 0,
                     main_pass: render_pass,
                 },
-                flags: PipelineCreationFlags::empty(),
-                parent: BasePipeline::None,
-            };
+            );
+
+            desc.vertex_buffers.push(VertexBufferDesc {
+                binding: 0,
+                stride: mem::size_of::<DrawVert>() as ElemStride,
+                rate: VertexInputRate::Vertex,
+            });
+
+            desc.attributes.push(
+                // Position
+                AttributeDesc {
+                    location: 0,
+                    binding: 0,
+                    element: Element {
+                        format: Format::Rg32Sfloat,
+                        offset: offset_of!(DrawVert, pos) as u32,
+                    },
+                },
+            );
+
+            desc.attributes.push(
+                // UV
+                AttributeDesc {
+                    location: 1,
+                    binding: 0,
+                    element: Element {
+                        format: Format::Rg32Sfloat,
+                        offset: offset_of!(DrawVert, uv) as u32,
+                    },
+                },
+            );
+
+            desc.attributes.push(
+                // Color
+                AttributeDesc {
+                    location: 2,
+                    binding: 0,
+                    element: Element {
+                        format: Format::Rgba8Unorm,
+                        offset: offset_of!(DrawVert, col) as u32,
+                    },
+                },
+            );
+
+            desc.blender.targets.push(ColorBlendDesc {
+                mask: ColorMask::ALL,
+                blend: Some(BlendState::ALPHA),
+            });
 
             unsafe {
                 device
@@ -806,9 +764,6 @@ impl<I: Instance> Renderer<I> {
             height: font_height,
             data: font_data,
         } = fonts.build_rgba32_texture();
-
-        // image::png::PNGEncoder::new()
-        std::fs::write("jack_look_here.png", font_data);
 
         let imgui_image = LoadedImage::allocate_and_create(
             &self.adapter,
@@ -1003,7 +958,6 @@ impl<I: Instance> Renderer<I> {
 
                         for cmd in list.commands() {
                             if let imgui::DrawCmd::Elements { count, cmd_params } = cmd {
-                                println!("Command Params is {:?}", cmd_params);
                                 // Calculate the scissor
                                 let scissor = Rect {
                                     x: cmd_params.clip_rect[0] as i16,
@@ -1136,11 +1090,8 @@ impl<I: Instance> Renderer<I> {
                 &extent,
                 &self.render_pass,
             )?);
-            self.pipeline_bundles.push(Self::create_imgui_pipeline(
-                &self.device,
-                &extent,
-                &self.render_pass,
-            )?);
+            self.pipeline_bundles
+                .push(Self::create_imgui_pipeline(&self.device, &self.render_pass)?);
 
             // Finally, we got ourselves a nice and shiny new swapchain!
             self.swapchain = manual_new!(swapchain);
