@@ -383,6 +383,243 @@ impl<I: Instance> Renderer<I> {
         })
     }
 
+    pub fn render<'a>(
+        &mut self,
+        renderer_commands: RendererCommands<'a>,
+    ) -> Result<Option<Suboptimal>, DrawingError> {
+        // SETUP FOR THIS FRAME
+        let image_available = &self.image_available_semaphores[self.current_frame];
+        let render_finished = &self.render_finished_semaphores[self.current_frame];
+        // Advance the frame *before* we start using the `?` operator
+        self.current_frame = (self.current_frame + 1) % self.frames_in_flight;
+
+        let (i_u32, i_usize) = unsafe {
+            let image_index = self
+                .swapchain
+                .acquire_image(core::u64::MAX, Some(image_available), None)
+                .map_err(|_| DrawingError::AcquireAnImageFromSwapchain)?;
+
+            (image_index.0, image_index.0 as usize)
+        };
+
+        // Get the fence, and wait for the fence
+        let flight_fence = &self.in_flight_fences[i_usize];
+        unsafe {
+            self.device
+                .wait_for_fence(flight_fence, core::u64::MAX)
+                .map_err(|_| DrawingError::WaitOnFence)?;
+            self.device
+                .reset_fence(flight_fence)
+                .map_err(|_| DrawingError::ResetFence)?;
+        }
+
+        // RECORD COMMANDS
+        unsafe {
+            let buffer = &mut self.command_buffers[i_usize];
+            const TRIANGLE_CLEAR: [ClearValue; 1] = [ClearValue::Color(ClearColor::Sfloat([
+                139.0 / 255.0,
+                110.0 / 255.0,
+                101.0 / 255.0,
+                1.0,
+            ]))];
+            buffer.begin(false);
+            {
+                let mut encoder = buffer.begin_render_pass_inline(
+                    &self.render_pass,
+                    &self.framebuffers[i_usize],
+                    self.viewport,
+                    TRIANGLE_CLEAR.iter(),
+                );
+
+                if let Some(game_world_commands) = renderer_commands.game_world_draw_commands {
+                    Self::draw_game_world(
+                        &mut encoder,
+                        game_world_commands,
+                        &self.pipeline_bundles[QUAD_DATA],
+                        &self.vertex_index_buffer_bundles[QUAD_DATA],
+                    )?;
+                }
+
+                if let Some(imgui_commands) = renderer_commands.imgui_draw_commands {
+                    Self::draw_imgui(
+                        &mut encoder,
+                        imgui_commands,
+                        &self.pipeline_bundles[IMGUI_DATA],
+                        &mut self.vertex_index_buffer_bundles[IMGUI_DATA],
+                        &self.device,
+                        &self.adapter,
+                        self.images[0].descriptor_set.deref(),
+                    )?;
+                }
+            }
+            buffer.finish();
+        }
+
+        // SUBMISSION AND PRESENT
+        let command_buffers = &self.command_buffers[i_usize..=i_usize];
+        let wait_semaphores: ArrayVec<[_; 1]> =
+            [(image_available, PipelineStage::COLOR_ATTACHMENT_OUTPUT)].into();
+        let signal_semaphores: ArrayVec<[_; 1]> = [render_finished].into();
+        // yes, you have to write it twice like this. yes, it's silly.
+        let present_wait_semaphores: ArrayVec<[_; 1]> = [render_finished].into();
+        let submission = Submission {
+            command_buffers,
+            wait_semaphores,
+            signal_semaphores,
+        };
+        let the_command_queue = &mut self.queue_group.queues[0];
+        unsafe {
+            the_command_queue.submit(submission, Some(flight_fence));
+            self.swapchain
+                .present(the_command_queue, i_u32, present_wait_semaphores)
+                .map_err(|_| DrawingError::PresentIntoSwapchain)
+        }
+    }
+
+    pub fn recreate_swapchain(&mut self, window: &WinitWindow) -> Result<(), &'static str> {
+        let (caps, formats, _) = self.surface.compatibility(&mut self.adapter.physical_device);
+        assert!(formats.iter().any(|fs| fs.contains(&self.format)));
+
+        let extent = {
+            let window_client_area = window
+                .get_inner_size()
+                .ok_or("Window doesn't exist!")?
+                .to_physical(window.get_hidpi_factor());
+
+            Extent2D {
+                width: caps.extents.end().width.min(window_client_area.width as u32),
+                height: caps.extents.end().height.min(window_client_area.height as u32),
+            }
+        };
+
+        self.viewport = extent.to_extent().rect();
+
+        let swapchain_config = gfx_hal::window::SwapchainConfig::from_caps(&caps, self.format, extent);
+
+        unsafe {
+            self.drop_swapchain();
+            let (swapchain, backbuffer) = self
+                .device
+                .create_swapchain(&mut self.surface, swapchain_config, None)
+                .map_err(|_| "Couldn't recreate the swapchain!")?;
+
+            let image_views = {
+                backbuffer
+                    .into_iter()
+                    .map(|image| {
+                        self.device
+                            .create_image_view(
+                                &image,
+                                ViewKind::D2,
+                                self.format,
+                                Swizzle::NO,
+                                SubresourceRange {
+                                    aspects: Aspects::COLOR,
+                                    levels: 0..1,
+                                    layers: 0..1,
+                                },
+                            )
+                            .map_err(|_| "Couldn't create the image_view for the image!")
+                    })
+                    .collect::<Result<Vec<_>, &str>>()?
+            };
+
+            let framebuffers = {
+                image_views
+                    .iter()
+                    .map(|image_view| {
+                        self.device
+                            .create_framebuffer(
+                                &self.render_pass,
+                                vec![image_view],
+                                Extent {
+                                    width: extent.width as u32,
+                                    height: extent.height as u32,
+                                    depth: 1,
+                                },
+                            )
+                            .map_err(|_| "Failed to create a framebuffer!")
+                    })
+                    .collect::<Result<Vec<_>, &str>>()?
+            };
+
+            let mut command_pool = self
+                .device
+                .create_command_pool_typed(&self.queue_group, CommandPoolCreateFlags::RESET_INDIVIDUAL)
+                .map_err(|_| "Could not create the raw command pool!")?;
+
+            let command_buffers: Vec<CommandBuffer<I::Backend, Graphics, MultiShot, Primary>> = framebuffers
+                .iter()
+                .map(|_| command_pool.acquire_command_buffer())
+                .collect();
+
+            // Recreate the pipelines...
+            self.pipeline_bundles.push(Self::create_pipeline(
+                &mut self.device,
+                &extent,
+                &self.render_pass,
+            )?);
+            self.pipeline_bundles
+                .push(Self::create_imgui_pipeline(&self.device, &self.render_pass)?);
+
+            // Finally, we got ourselves a nice and shiny new swapchain!
+            self.swapchain = manual_new!(swapchain);
+            self.framebuffers = framebuffers;
+            self.command_buffers = command_buffers;
+            self.command_pool = manual_new!(command_pool);
+        }
+        Ok(())
+    }
+
+    fn allocate_imgui_textures(&mut self, imgui: &mut ImGuiContext) -> Result<(), &'static str> {
+        let mut fonts = imgui.fonts();
+        let imgui::FontAtlasTexture {
+            width: font_width,
+            height: font_height,
+            data: font_data,
+        } = fonts.build_rgba32_texture();
+
+        let imgui_image = LoadedImage::allocate_and_create(
+            &self.adapter,
+            &self.device,
+            &mut self.command_pool,
+            &mut self.queue_group.queues[0],
+            &mut self.pipeline_bundles[IMGUI_DATA],
+            font_data,
+            font_width as usize,
+            font_height as usize,
+        )?;
+
+        fonts.tex_id = TextureId::from(self.images.len());
+
+        self.images.push(imgui_image);
+        Ok(())
+    }
+
+    fn allocate_imgui_buffers(&mut self) -> Result<(), BufferBundleError> {
+        let vertex_buffer = BufferBundle::new(
+            &self.adapter,
+            &self.device,
+            (1000 * mem::size_of::<DrawVert>()) as u64,
+            buffer::Usage::VERTEX,
+        )?;
+
+        let index_buffer = BufferBundle::new(
+            &self.adapter,
+            &self.device,
+            (1000 * mem::size_of::<DrawIdx>()) as u64,
+            buffer::Usage::INDEX,
+        )?;
+
+        self.vertex_index_buffer_bundles
+            .push(VertexIndexPairBufferBundle {
+                vertex_buffer,
+                index_buffer,
+            });
+
+        Ok(())
+    }
+
     fn create_pipeline(
         device: &mut <I::Backend as Backend>::Device,
         extent: &Extent2D,
@@ -762,148 +999,6 @@ impl<I: Instance> Renderer<I> {
         Ok(pipeline_bundle)
     }
 
-    fn allocate_imgui_textures(&mut self, imgui: &mut ImGuiContext) -> Result<(), &'static str> {
-        let mut fonts = imgui.fonts();
-        let imgui::FontAtlasTexture {
-            width: font_width,
-            height: font_height,
-            data: font_data,
-        } = fonts.build_rgba32_texture();
-
-        let imgui_image = LoadedImage::allocate_and_create(
-            &self.adapter,
-            &self.device,
-            &mut self.command_pool,
-            &mut self.queue_group.queues[0],
-            &mut self.pipeline_bundles[IMGUI_DATA],
-            font_data,
-            font_width as usize,
-            font_height as usize,
-        )?;
-
-        fonts.tex_id = TextureId::from(self.images.len());
-
-        self.images.push(imgui_image);
-        Ok(())
-    }
-
-    fn allocate_imgui_buffers(&mut self) -> Result<(), BufferBundleError> {
-        let vertex_buffer = BufferBundle::new(
-            &self.adapter,
-            &self.device,
-            (1000 * mem::size_of::<DrawVert>()) as u64,
-            buffer::Usage::VERTEX,
-        )?;
-
-        let index_buffer = BufferBundle::new(
-            &self.adapter,
-            &self.device,
-            (1000 * mem::size_of::<DrawIdx>()) as u64,
-            buffer::Usage::INDEX,
-        )?;
-
-        self.vertex_index_buffer_bundles
-            .push(VertexIndexPairBufferBundle {
-                vertex_buffer,
-                index_buffer,
-            });
-
-        Ok(())
-    }
-
-    pub fn render<'a>(
-        &mut self,
-        renderer_commands: RendererCommands<'a>,
-    ) -> Result<Option<Suboptimal>, DrawingError> {
-        // SETUP FOR THIS FRAME
-        let image_available = &self.image_available_semaphores[self.current_frame];
-        let render_finished = &self.render_finished_semaphores[self.current_frame];
-        // Advance the frame *before* we start using the `?` operator
-        self.current_frame = (self.current_frame + 1) % self.frames_in_flight;
-
-        let (i_u32, i_usize) = unsafe {
-            let image_index = self
-                .swapchain
-                .acquire_image(core::u64::MAX, Some(image_available), None)
-                .map_err(|_| DrawingError::AcquireAnImageFromSwapchain)?;
-
-            (image_index.0, image_index.0 as usize)
-        };
-
-        // Get the fence, and wait for the fence
-        let flight_fence = &self.in_flight_fences[i_usize];
-        unsafe {
-            self.device
-                .wait_for_fence(flight_fence, core::u64::MAX)
-                .map_err(|_| DrawingError::WaitOnFence)?;
-            self.device
-                .reset_fence(flight_fence)
-                .map_err(|_| DrawingError::ResetFence)?;
-        }
-
-        // RECORD COMMANDS
-        unsafe {
-            let buffer = &mut self.command_buffers[i_usize];
-            const TRIANGLE_CLEAR: [ClearValue; 1] = [ClearValue::Color(ClearColor::Sfloat([
-                139.0 / 255.0,
-                110.0 / 255.0,
-                101.0 / 255.0,
-                1.0,
-            ]))];
-            buffer.begin(false);
-            {
-                let mut encoder = buffer.begin_render_pass_inline(
-                    &self.render_pass,
-                    &self.framebuffers[i_usize],
-                    self.viewport,
-                    TRIANGLE_CLEAR.iter(),
-                );
-
-                if let Some(game_world_commands) = renderer_commands.game_world_draw_commands {
-                    Self::draw_game_world(
-                        &mut encoder,
-                        game_world_commands,
-                        &self.pipeline_bundles[QUAD_DATA],
-                        &self.vertex_index_buffer_bundles[QUAD_DATA],
-                    )?;
-                }
-
-                if let Some(imgui_commands) = renderer_commands.imgui_draw_commands {
-                    Self::draw_imgui(
-                        &mut encoder,
-                        imgui_commands,
-                        &self.pipeline_bundles[IMGUI_DATA],
-                        &mut self.vertex_index_buffer_bundles[IMGUI_DATA],
-                        &self.device,
-                        &self.adapter,
-                        self.images[0].descriptor_set.deref(),
-                    )?;
-                }
-            }
-            buffer.finish();
-        }
-
-        // SUBMISSION AND PRESENT
-        let command_buffers = &self.command_buffers[i_usize..=i_usize];
-        let wait_semaphores: ArrayVec<[_; 1]> =
-            [(image_available, PipelineStage::COLOR_ATTACHMENT_OUTPUT)].into();
-        let signal_semaphores: ArrayVec<[_; 1]> = [render_finished].into();
-        // yes, you have to write it twice like this. yes, it's silly.
-        let present_wait_semaphores: ArrayVec<[_; 1]> = [render_finished].into();
-        let submission = Submission {
-            command_buffers,
-            wait_semaphores,
-            signal_semaphores,
-        };
-        let the_command_queue = &mut self.queue_group.queues[0];
-        unsafe {
-            the_command_queue.submit(submission, Some(flight_fence));
-            self.swapchain
-                .present(the_command_queue, i_u32, present_wait_semaphores)
-                .map_err(|_| DrawingError::PresentIntoSwapchain)
-        }
-    }
-
     unsafe fn draw_game_world<'a>(
         encoder: &mut RenderPassInlineEncoder<'_, I::Backend>,
         game_world: GameWorldDrawCommands<'_>,
@@ -953,7 +1048,7 @@ impl<I: Instance> Renderer<I> {
         Ok(())
     }
 
-    pub unsafe fn draw_imgui<'a>(
+    unsafe fn draw_imgui<'a>(
         encoder: &mut RenderPassInlineEncoder<'_, I::Backend>,
         imgui_data: ImGuiDrawCommands<'_>,
         imgui_pipeline: &'a PipelineBundle<I::Backend>,
@@ -1058,101 +1153,6 @@ impl<I: Instance> Renderer<I> {
             vertex_offset += list.vtx_buffer().len();
         }
 
-        Ok(())
-    }
-
-    pub fn recreate_swapchain(&mut self, window: &WinitWindow) -> Result<(), &'static str> {
-        let (caps, formats, _) = self.surface.compatibility(&mut self.adapter.physical_device);
-        assert!(formats.iter().any(|fs| fs.contains(&self.format)));
-
-        let extent = {
-            let window_client_area = window
-                .get_inner_size()
-                .ok_or("Window doesn't exist!")?
-                .to_physical(window.get_hidpi_factor());
-
-            Extent2D {
-                width: caps.extents.end().width.min(window_client_area.width as u32),
-                height: caps.extents.end().height.min(window_client_area.height as u32),
-            }
-        };
-
-        self.viewport = extent.to_extent().rect();
-
-        let swapchain_config = gfx_hal::window::SwapchainConfig::from_caps(&caps, self.format, extent);
-
-        unsafe {
-            self.drop_swapchain();
-            let (swapchain, backbuffer) = self
-                .device
-                .create_swapchain(&mut self.surface, swapchain_config, None)
-                .map_err(|_| "Couldn't recreate the swapchain!")?;
-
-            let image_views = {
-                backbuffer
-                    .into_iter()
-                    .map(|image| {
-                        self.device
-                            .create_image_view(
-                                &image,
-                                ViewKind::D2,
-                                self.format,
-                                Swizzle::NO,
-                                SubresourceRange {
-                                    aspects: Aspects::COLOR,
-                                    levels: 0..1,
-                                    layers: 0..1,
-                                },
-                            )
-                            .map_err(|_| "Couldn't create the image_view for the image!")
-                    })
-                    .collect::<Result<Vec<_>, &str>>()?
-            };
-
-            let framebuffers = {
-                image_views
-                    .iter()
-                    .map(|image_view| {
-                        self.device
-                            .create_framebuffer(
-                                &self.render_pass,
-                                vec![image_view],
-                                Extent {
-                                    width: extent.width as u32,
-                                    height: extent.height as u32,
-                                    depth: 1,
-                                },
-                            )
-                            .map_err(|_| "Failed to create a framebuffer!")
-                    })
-                    .collect::<Result<Vec<_>, &str>>()?
-            };
-
-            let mut command_pool = self
-                .device
-                .create_command_pool_typed(&self.queue_group, CommandPoolCreateFlags::RESET_INDIVIDUAL)
-                .map_err(|_| "Could not create the raw command pool!")?;
-
-            let command_buffers: Vec<CommandBuffer<I::Backend, Graphics, MultiShot, Primary>> = framebuffers
-                .iter()
-                .map(|_| command_pool.acquire_command_buffer())
-                .collect();
-
-            // Recreate the pipelines...
-            self.pipeline_bundles.push(Self::create_pipeline(
-                &mut self.device,
-                &extent,
-                &self.render_pass,
-            )?);
-            self.pipeline_bundles
-                .push(Self::create_imgui_pipeline(&self.device, &self.render_pass)?);
-
-            // Finally, we got ourselves a nice and shiny new swapchain!
-            self.swapchain = manual_new!(swapchain);
-            self.framebuffers = framebuffers;
-            self.command_buffers = command_buffers;
-            self.command_pool = manual_new!(command_pool);
-        }
         Ok(())
     }
 
