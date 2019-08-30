@@ -76,6 +76,10 @@ impl<B: Backend> BufferBundle<B> {
         }
     }
 
+    pub fn has_room(&self, size: u64) -> bool {
+        self.requirements.size >= size
+    }
+
     pub unsafe fn manually_drop(&self, device: &B::Device) {
         use core::ptr::read;
         device.destroy_buffer(ManuallyDrop::into_inner(read(&self.buffer)));

@@ -22,6 +22,7 @@ use gfx_hal::{
     Backend, Features, Gpu, Graphics, IndexType, Instance, Primitive, QueueFamily,
 };
 use imgui::{Context as ImGuiContext, DrawData, DrawIdx, DrawVert, TextureId};
+use std::convert::TryFrom;
 use std::{borrow::Cow, mem, ops::Deref};
 use winit::Window as WinitWindow;
 
@@ -33,8 +34,8 @@ use gfx_backend_metal as back;
 use gfx_backend_vulkan as back;
 
 use super::{
-    BufferBundle, Entity, LoadedImage, Vec2, Vertex, VertexIndexPairBufferBundle, Window, QUAD_INDICES,
-    QUAD_VERTICES,
+    BufferBundle, DrawingError, Entity, LoadedImage, Vec2, Vertex, VertexIndexPairBufferBundle, Window,
+    QUAD_INDICES, QUAD_VERTICES,
 };
 
 const VERTEX_PUSH_CONSTANTS_SIZE: u32 = 6;
@@ -93,6 +94,7 @@ impl<I: Instance> Renderer<I> {
         let mut renderer = TypedRenderer::new(&window.window, instance, surface)?;
         // Allocate our Textures -- spin this out to another method if we ever make another texture
         renderer.allocate_imgui_textures(imgui)?;
+        renderer.allocate_imgui_buffers()?;
         Ok(renderer)
     }
 
@@ -782,6 +784,30 @@ impl<I: Instance> Renderer<I> {
         Ok(())
     }
 
+    fn allocate_imgui_buffers(&mut self) -> Result<(), &'static str> {
+        let vertex_buffer = BufferBundle::new(
+            &self.adapter,
+            &self.device,
+            (1000 * mem::size_of::<DrawVert>()) as u64,
+            buffer::Usage::VERTEX,
+        )?;
+
+        let index_buffer = BufferBundle::new(
+            &self.adapter,
+            &self.device,
+            (1000 * mem::size_of::<DrawIdx>()) as u64,
+            buffer::Usage::INDEX,
+        )?;
+
+        self.vertex_index_buffer_bundles
+            .push(VertexIndexPairBufferBundle {
+                vertex_buffer,
+                index_buffer,
+            });
+
+        Ok(())
+    }
+
     pub fn draw_quad_frame(
         &mut self,
         entities: &mut [Vec<Entity>],
@@ -827,7 +853,6 @@ impl<I: Instance> Renderer<I> {
                 1.0,
             ]))];
             buffer.begin(false);
-            // Normal Quads
             {
                 let mut encoder = buffer.begin_render_pass_inline(
                     &self.render_pass,
@@ -884,21 +909,28 @@ impl<I: Instance> Renderer<I> {
 
                 // Draw ImGUI GML
                 {
-                    let mut this_vertex_buffer = BufferBundle::new(
-                        &self.adapter,
-                        &self.device,
-                        (draw_data.total_vtx_count as usize * mem::size_of::<DrawVert>()) as u64,
-                        buffer::Usage::VERTEX,
+                    let size = u64::try_from(
+                        usize::try_from(draw_data.total_vtx_count).unwrap() * mem::size_of::<DrawVert>(),
                     )
-                    .map_err(|_| DrawingError::BufferCreation)?;
+                    .unwrap();
+                    if self.vertex_index_buffer_bundles[IMGUI_DATA].vertex_buffer.has_room(size) == false {
+                        let new_buffer =
+                            BufferBundle::new(&self.adapter, &self.device, size, buffer::Usage::VERTEX)
+                                .map_err(|_| DrawingError::BufferCreationError)?;
 
-                    let mut this_index_buffer = BufferBundle::new(
-                        &self.adapter,
-                        &self.device,
-                        (draw_data.total_idx_count as usize * mem::size_of::<DrawIdx>()) as u64,
-                        buffer::Usage::INDEX,
-                    )
-                    .map_err(|_| DrawingError::BufferCreation)?;
+                        self.vertex_index_buffer_bundles[IMGUI_DATA].vertex_buffer = new_buffer;
+                    }
+
+                    if imgui_index_buffer.has_room(u64::try_from(draw_data.total_idx_count).unwrap()) == false
+                    {
+                        // JACK YOU'RE RIGHT HERE
+                    }
+
+                    // Check our Buffers
+                    let VertexIndexPairBufferBundle {
+                        vertex_buffer: imgui_vertex_buffer,
+                        index_buffer: imgui_index_buffer,
+                    } = &mut self.vertex_index_buffer_bundles[IMGUI_DATA];
 
                     // Bind pipeline
                     let imgui_pipeline = &self.pipeline_bundles[IMGUI_DATA];
@@ -913,9 +945,9 @@ impl<I: Instance> Renderer<I> {
                     );
 
                     // Bind vertex and index buffers
-                    encoder.bind_vertex_buffers(0, Some((this_vertex_buffer.buffer.deref(), 0)));
+                    encoder.bind_vertex_buffers(0, Some((imgui_vertex_buffer.buffer.deref(), 0)));
                     encoder.bind_index_buffer(buffer::IndexBufferView {
-                        buffer: &this_index_buffer.buffer,
+                        buffer: &imgui_index_buffer.buffer,
                         offset: 0,
                         index_type: IndexType::U16,
                     });
@@ -953,8 +985,8 @@ impl<I: Instance> Renderer<I> {
                     // Iterate over drawlists
                     for list in draw_data.draw_lists() {
                         // Update vertex and index buffers
-                        this_vertex_buffer.update_buffer(list.vtx_buffer(), vertex_offset);
-                        this_index_buffer.update_buffer(list.idx_buffer(), index_offset);
+                        imgui_vertex_buffer.update_buffer(list.vtx_buffer(), vertex_offset);
+                        imgui_index_buffer.update_buffer(list.idx_buffer(), index_offset);
 
                         for cmd in list.commands() {
                             if let imgui::DrawCmd::Elements { count, cmd_params } = cmd {
@@ -1179,13 +1211,4 @@ impl<I: Instance> core::ops::Drop for Renderer<I> {
             ManuallyDrop::drop(&mut self.instance);
         }
     }
-}
-
-#[derive(Debug)]
-pub enum DrawingError {
-    AcquireAnImageFromSwapchain,
-    WaitOnFence,
-    ResetFence,
-    PresentIntoSwapchain,
-    BufferCreation,
 }

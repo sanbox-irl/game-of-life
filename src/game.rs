@@ -166,7 +166,7 @@ impl Game {
                         Game::recreate_swapchain(renderer, &self.window)
                     }
 
-                    DrawingError::ResetFence | DrawingError::WaitOnFence | DrawingError::BufferCreation => {
+                    DrawingError::ResetFence | DrawingError::WaitOnFence | DrawingError::BufferCreationError  => {
                         error!("Rendering Error: {:?}", e);
                         error!("Auo-restarting Renderer...");
 
