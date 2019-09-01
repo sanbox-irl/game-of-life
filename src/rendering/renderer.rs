@@ -1,5 +1,6 @@
 use arrayvec::ArrayVec;
 use core::mem::ManuallyDrop;
+use failure::Error;
 use gfx_hal::{
     adapter::{Adapter, PhysicalDevice},
     buffer::{self, IndexBufferView},
@@ -32,9 +33,9 @@ use gfx_backend_metal as back;
 use gfx_backend_vulkan as back;
 
 use super::{
-    BufferBundle, BufferBundleError, DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, LoadedImage,
-    PipelineBundle, RendererCommands, Vertex, VertexIndexPairBufferBundle, Window, QUAD_INDICES,
-    QUAD_VERTICES,
+    BufferBundle, DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, LoadedImage,
+    MemoryWritingError, PipelineBundle, PipelineCreationError, RendererCommands,
+    RendererCreationError, Vertex, VertexIndexPairBufferBundle, Window, QUAD_INDICES, QUAD_VERTICES,
 };
 
 const VERTEX_PUSH_CONSTANTS_SIZE: u32 = 6;
@@ -84,26 +85,28 @@ pub struct Renderer<I: Instance> {
 
 pub type TypedRenderer = Renderer<back::Instance>;
 impl<I: Instance> Renderer<I> {
-    pub fn typed_new(window: &Window, imgui: &mut ImGuiContext) -> Result<TypedRenderer, &'static str> {
+    pub fn typed_new(window: &Window) -> Result<TypedRenderer, Error> {
         // Create An Instance
         let instance = back::Instance::create(window.name, 1);
         // Create A Surface
         let surface = instance.create_surface(&window.window);
         // Create A renderer
-        let mut renderer = TypedRenderer::new(&window.window, instance, surface)?;
+        TypedRenderer::new(&window.window, instance, surface)
+    }
+
+    pub fn initialize_imgui(&mut self, imgui: &mut ImGuiContext) -> Result<(), Error> {
         // Allocate our Textures -- spin this out to another method if we ever make another texture
-        renderer.allocate_imgui_textures(imgui)?;
-        renderer
-            .allocate_imgui_buffers()
-            .map_err(|_| "Error allocating the ImGui Buffers!")?;
-        Ok(renderer)
+        self.allocate_imgui_textures(imgui)?;
+        self.allocate_imgui_buffers()?;
+
+        Ok(())
     }
 
     pub fn new(
         window: &WinitWindow,
         instance: I,
         mut surface: <I::Backend as Backend>::Surface,
-    ) -> Result<Self, &'static str> {
+    ) -> Result<Self, Error> {
         let adapter = instance
             .enumerate_adapters()
             .into_iter()
@@ -112,7 +115,7 @@ impl<I: Instance> Renderer<I> {
                     .iter()
                     .any(|qf| qf.supports_graphics() && surface.supports_queue_family(qf))
             })
-            .ok_or("Couldn't find a graphical adapter!")?;
+            .ok_or(RendererCreationError::GraphicalAdapter)?;
 
         // open it up!
         let (mut device, queue_group) = {
@@ -120,21 +123,21 @@ impl<I: Instance> Renderer<I> {
                 .queue_families
                 .iter()
                 .find(|qf| qf.supports_graphics() && surface.supports_queue_family(qf))
-                .ok_or("Couldn't find a QueueFamily with graphics!")?;
+                .ok_or(RendererCreationError::FindQueueFamily)?;
 
             let Gpu { device, mut queues } = unsafe {
                 adapter
                     .physical_device
                     .open(&[(queue_family, &[1.0; 1])], Features::empty())
-                    .map_err(|_| "Couldn't open the PhysicalDevice!")?
+                    .map_err(|e| RendererCreationError::OpenPhysicalAdapter(e))?
             };
 
             let queue_group = queues
                 .take::<Graphics>(queue_family.id())
-                .expect("Couldn't take ownership of the QueueGroup!");
+                .ok_or(RendererCreationError::OwnershipQueueGroup)?;
 
             if queue_group.queues.len() == 0 {
-                return Err("The QueueGroup did not have any CommandQueues available");
+                return Err(format_err!("{}", RendererCreationError::FindCommandQueue));
             }
             (device, queue_group)
         };
@@ -152,11 +155,11 @@ impl<I: Instance> Renderer<I> {
                     .iter()
                     .cloned()
                     .find(|pm| present_modes.contains(pm))
-                    .ok_or("No PresentMode values specified!")?
+                    .ok_or(RendererCreationError::PresentMode)?
             };
 
-            use gfx_hal::window::CompositeAlpha;
             trace!("We're setting composite alpha to opaque...Need to figure out where to find the user's intent.");
+            use gfx_hal::window::CompositeAlpha;
             let composite_alpha = CompositeAlpha::OPAQUE;
 
             let format = match preferred_formats {
@@ -170,14 +173,14 @@ impl<I: Instance> Renderer<I> {
                     None => formats
                         .get(0)
                         .cloned()
-                        .ok_or("Preferred format list was empty!")?,
+                        .ok_or(RendererCreationError::EmptyFormatList)?,
                 },
             };
 
             let extent = {
                 let window_client_area = window
                     .get_inner_size()
-                    .ok_or("Window doesn't exist!")?
+                    .ok_or(RendererCreationError::WindowExist)?
                     .to_physical(window.get_hidpi_factor());
 
                 Extent2D {
@@ -194,9 +197,8 @@ impl<I: Instance> Renderer<I> {
 
             let image_layers = 1;
             if caps.usage.contains(Usage::COLOR_ATTACHMENT) == false {
-                return Err("The Surface isn't capable of supporting color!");
+                return Err(format_err!("{}", RendererCreationError::SurfaceColor));
             }
-
             let image_usage = Usage::COLOR_ATTACHMENT;
 
             let swapchain_config = SwapchainConfig {
@@ -215,7 +217,7 @@ impl<I: Instance> Renderer<I> {
             let (swapchain, backbuffer) = unsafe {
                 device
                     .create_swapchain(&mut surface, swapchain_config, None)
-                    .map_err(|_| "Failed to create the swapchain on the last step!")?
+                    .map_err(|e| RendererCreationError::Swapchain(e))?
             };
 
             (swapchain, extent, backbuffer, format, image_count as usize)
@@ -229,17 +231,17 @@ impl<I: Instance> Renderer<I> {
                 in_flight_fences.push(
                     device
                         .create_fence(true)
-                        .map_err(|_| "Could not create a fence!")?,
+                        .map_err(|e| RendererCreationError::Fence(e))?,
                 );
                 image_available_semaphores.push(
                     device
                         .create_semaphore()
-                        .map_err(|_| "Could not create a semaphore!")?,
+                        .map_err(|e| RendererCreationError::ImageAvailableSemaphore(e))?,
                 );
                 render_finished_semaphores.push(
                     device
                         .create_semaphore()
-                        .map_err(|_| "Could not create a semaphore!")?,
+                        .map_err(|e| RendererCreationError::RenderFinishedSemaphore(e))?,
                 );
             }
             (
@@ -272,7 +274,7 @@ impl<I: Instance> Renderer<I> {
             unsafe {
                 device
                     .create_render_pass(&[color_attachment], &[subpass], &[])
-                    .map_err(|_| "Couldn't create a render pass!")?
+                    .map_err(|e| RendererCreationError::RenderPassCreation(e))?
             }
         };
 
@@ -292,9 +294,9 @@ impl<I: Instance> Renderer<I> {
                                 layers: 0..1,
                             },
                         )
-                        .map_err(|_| "Couldn't create the image_view for the image!")
+                        .map_err(|e| RendererCreationError::ImageViews(e))
                 })
-                .collect::<Result<Vec<_>, &str>>()?
+                .collect::<Result<Vec<_>, RendererCreationError>>()?
         };
 
         let framebuffers = {
@@ -311,15 +313,15 @@ impl<I: Instance> Renderer<I> {
                                 depth: 1,
                             },
                         )
-                        .map_err(|_| "Failed to create a framebuffer!")
+                        .map_err(|e| RendererCreationError::FrameBuffers(e))
                 })
-                .collect::<Result<Vec<_>, &str>>()?
+                .collect::<Result<Vec<_>, RendererCreationError>>()?
         };
 
         let mut command_pool = unsafe {
             device
                 .create_command_pool_typed(&queue_group, CommandPoolCreateFlags::RESET_INDIVIDUAL)
-                .map_err(|_| "Could not create the raw command pool!")?
+                .map_err(|e| RendererCreationError::CommandPool(e))?
         };
 
         let command_buffers: Vec<_> = framebuffers
@@ -339,18 +341,16 @@ impl<I: Instance> Renderer<I> {
             &device,
             mem::size_of_val(&QUAD_VERTICES) as u64,
             buffer::Usage::VERTEX,
-        )
-        .map_err(|_| "Error Allocating iconic Quad vert buffer!")?;
-        Renderer::<I>::bind_to_memory(&mut device, &vertex_buffer, &QUAD_VERTICES)?;
+        )?;
+        Self::bind_to_memory(&mut device, &vertex_buffer, &QUAD_VERTICES)?;
 
         let index_buffer = BufferBundle::new(
             &adapter,
             &device,
             mem::size_of_val(&QUAD_INDICES) as u64,
             buffer::Usage::INDEX,
-        )
-        .map_err(|_| "Error Allocating iconic Quad idx buffer!")?;
-        Renderer::<I>::bind_to_memory(&mut device, &index_buffer, &QUAD_INDICES)?;
+        )?;
+        Self::bind_to_memory(&mut device, &index_buffer, &QUAD_INDICES)?;
 
         vertex_index_buffer_bundles.push(VertexIndexPairBufferBundle {
             vertex_buffer,
@@ -476,14 +476,14 @@ impl<I: Instance> Renderer<I> {
         }
     }
 
-    pub fn recreate_swapchain(&mut self, window: &WinitWindow) -> Result<(), &'static str> {
+    pub fn recreate_swapchain(&mut self, window: &WinitWindow) -> Result<(), Error> {
         let (caps, formats, _) = self.surface.compatibility(&mut self.adapter.physical_device);
         assert!(formats.iter().any(|fs| fs.contains(&self.format)));
 
         let extent = {
             let window_client_area = window
                 .get_inner_size()
-                .ok_or("Window doesn't exist!")?
+                .ok_or(RendererCreationError::WindowExist)?
                 .to_physical(window.get_hidpi_factor());
 
             Extent2D {
@@ -501,7 +501,7 @@ impl<I: Instance> Renderer<I> {
             let (swapchain, backbuffer) = self
                 .device
                 .create_swapchain(&mut self.surface, swapchain_config, None)
-                .map_err(|_| "Couldn't recreate the swapchain!")?;
+                .map_err(|e| RendererCreationError::Swapchain(e))?;
 
             let image_views = {
                 backbuffer
@@ -519,9 +519,9 @@ impl<I: Instance> Renderer<I> {
                                     layers: 0..1,
                                 },
                             )
-                            .map_err(|_| "Couldn't create the image_view for the image!")
+                            .map_err(|e| RendererCreationError::ImageViews(e))
                     })
-                    .collect::<Result<Vec<_>, &str>>()?
+                    .collect::<Result<Vec<_>, RendererCreationError>>()?
             };
 
             let framebuffers = {
@@ -538,15 +538,15 @@ impl<I: Instance> Renderer<I> {
                                     depth: 1,
                                 },
                             )
-                            .map_err(|_| "Failed to create a framebuffer!")
+                            .map_err(|e| RendererCreationError::FrameBuffers(e))
                     })
-                    .collect::<Result<Vec<_>, &str>>()?
+                    .collect::<Result<Vec<_>, RendererCreationError>>()?
             };
 
             let mut command_pool = self
                 .device
                 .create_command_pool_typed(&self.queue_group, CommandPoolCreateFlags::RESET_INDIVIDUAL)
-                .map_err(|_| "Could not create the raw command pool!")?;
+                .map_err(|e| RendererCreationError::CommandPool(e))?;
 
             let command_buffers: Vec<CommandBuffer<I::Backend, Graphics, MultiShot, Primary>> = framebuffers
                 .iter()
@@ -559,6 +559,7 @@ impl<I: Instance> Renderer<I> {
                 &extent,
                 &self.render_pass,
             )?);
+
             self.pipeline_bundles
                 .push(Self::create_imgui_pipeline(&self.device, &self.render_pass)?);
 
@@ -571,7 +572,7 @@ impl<I: Instance> Renderer<I> {
         Ok(())
     }
 
-    fn allocate_imgui_textures(&mut self, imgui: &mut ImGuiContext) -> Result<(), &'static str> {
+    fn allocate_imgui_textures(&mut self, imgui: &mut ImGuiContext) -> Result<(), Error> {
         let mut fonts = imgui.fonts();
         let imgui::FontAtlasTexture {
             width: font_width,
@@ -596,7 +597,7 @@ impl<I: Instance> Renderer<I> {
         Ok(())
     }
 
-    fn allocate_imgui_buffers(&mut self) -> Result<(), BufferBundleError> {
+    fn allocate_imgui_buffers(&mut self) -> Result<(), Error> {
         let vertex_buffer = BufferBundle::new(
             &self.adapter,
             &self.device,
@@ -624,11 +625,11 @@ impl<I: Instance> Renderer<I> {
         device: &mut <I::Backend as Backend>::Device,
         extent: &Extent2D,
         render_pass: &<I::Backend as Backend>::RenderPass,
-    ) -> Result<(PipelineBundle<I::Backend>), &'static str> {
+    ) -> Result<(PipelineBundle<I::Backend>), PipelineCreationError> {
         const VERTEX_SOURCE: &'static str = include_str!("shaders/default_vert.vert");
         const FRAGMENT_SOURCE: &'static str = include_str!("shaders/default_frag.frag");
 
-        let mut compiler = shaderc::Compiler::new().ok_or("shaderc not found!")?;
+        let mut compiler = shaderc::Compiler::new().ok_or(PipelineCreationError::ShaderCompilerFailed)?;
         let vertex_compile_artifact = compiler
             .compile_into_spirv(
                 VERTEX_SOURCE,
@@ -637,10 +638,7 @@ impl<I: Instance> Renderer<I> {
                 "main",
                 None,
             )
-            .map_err(|e| {
-                error!("{}", e);
-                "Couldn't compile vertex shader!"
-            })?;
+            .map_err(|e| PipelineCreationError::VertexShaderCompilation(e))?;
 
         let fragment_compile_artifact = compiler
             .compile_into_spirv(
@@ -650,21 +648,18 @@ impl<I: Instance> Renderer<I> {
                 "main",
                 None,
             )
-            .map_err(|e| {
-                error!("{}", e);
-                "Couldn't compile fragment shader!"
-            })?;
+            .map_err(|e| PipelineCreationError::FragmentShaderCompilation(e))?;
 
         let vertex_shader_module = unsafe {
             device
                 .create_shader_module(vertex_compile_artifact.as_binary())
-                .map_err(|_| "Couldn't make the vertex module!")?
+                .map_err(|e| PipelineCreationError::VertexModule(e))?
         };
 
         let fragment_shader_module = unsafe {
             device
                 .create_shader_module(fragment_compile_artifact.as_binary())
-                .map_err(|_| "Couldn't make the fragment module!")?
+                .map_err(|e| PipelineCreationError::FragmentModule(e))?
         };
 
         let (vs_entry, fs_entry) = (
@@ -755,7 +750,7 @@ impl<I: Instance> Renderer<I> {
         let descriptor_set_layout = Some(unsafe {
             device
                 .create_descriptor_set_layout(bindings, immutable_sampler)
-                .map_err(|_| "Couldn't make a Descriptor Set Layout!")?
+                .map_err(|e| PipelineCreationError::DescriptorSetLayout(e))?
         });
 
         let push_constants = vec![
@@ -768,7 +763,7 @@ impl<I: Instance> Renderer<I> {
         let layout = unsafe {
             device
                 .create_pipeline_layout(&descriptor_set_layout, push_constants)
-                .map_err(|_| "Couldn't create a pipeline layout")?
+                .map_err(|e| PipelineCreationError::PipelineLayout(e))?
         };
 
         let gfx_pipeline = {
@@ -794,7 +789,7 @@ impl<I: Instance> Renderer<I> {
             unsafe {
                 device
                     .create_graphics_pipeline(&desc, None)
-                    .map_err(|_| "Couldn't create a graphics pipeline!")?
+                    .map_err(|e| PipelineCreationError::PipelineCreation(e))?
             }
         };
 
@@ -809,11 +804,11 @@ impl<I: Instance> Renderer<I> {
     fn create_imgui_pipeline(
         device: &<I::Backend as Backend>::Device,
         render_pass: &<I::Backend as Backend>::RenderPass,
-    ) -> Result<PipelineBundle<I::Backend>, &'static str> {
+    ) -> Result<PipelineBundle<I::Backend>, PipelineCreationError> {
         const IMGUI_VERT_SOURCE: &'static str = include_str!("shaders/imgui_vert.vert");
         const IMGUI_FRAG_SOURCE: &'static str = include_str!("shaders/imgui_frag.frag");
 
-        let mut compiler = shaderc::Compiler::new().ok_or("shaderc not found!")?;
+        let mut compiler = shaderc::Compiler::new().ok_or(PipelineCreationError::ShaderCompilerFailed)?;
         let vertex_compile_artifact = compiler
             .compile_into_spirv(
                 IMGUI_VERT_SOURCE,
@@ -822,10 +817,7 @@ impl<I: Instance> Renderer<I> {
                 "main",
                 None,
             )
-            .map_err(|e| {
-                error!("{}", e);
-                "Couldn't compile vertex shader!"
-            })?;
+            .map_err(|e| PipelineCreationError::VertexShaderCompilation(e))?;
 
         let fragment_compile_artifact = compiler
             .compile_into_spirv(
@@ -835,21 +827,18 @@ impl<I: Instance> Renderer<I> {
                 "main",
                 None,
             )
-            .map_err(|e| {
-                error!("{}", e);
-                "Couldn't compile fragment shader!"
-            })?;
+            .map_err(|e| PipelineCreationError::FragmentShaderCompilation(e))?;
 
         let vertex_shader_module = unsafe {
             device
                 .create_shader_module(vertex_compile_artifact.as_binary())
-                .map_err(|_| "Couldn't make the vertex module!")?
+                .map_err(|e| PipelineCreationError::VertexModule(e))?
         };
 
         let fragment_shader_module = unsafe {
             device
                 .create_shader_module(fragment_compile_artifact.as_binary())
-                .map_err(|_| "Couldn't make the fragment module!")?
+                .map_err(|e| PipelineCreationError::FragmentModule(e))?
         };
 
         let (vs_entry, fs_entry) = (
@@ -894,7 +883,7 @@ impl<I: Instance> Renderer<I> {
                     ],
                     &[],
                 )
-                .map_err(|_| "Couldn't make a DescriptorSetLayout!")?
+                .map_err(|e| PipelineCreationError::DescriptorSetLayout(e))?
         };
 
         let descriptor_pool = unsafe {
@@ -913,14 +902,14 @@ impl<I: Instance> Renderer<I> {
                     ],
                     gfx_hal::pso::DescriptorPoolCreateFlags::empty(),
                 )
-                .map_err(|_| "Couldn't create a descriptor pool!")?
+                .map_err(|e| PipelineCreationError::DescriptorPool(e))?
         };
 
         let push_constants = vec![(ShaderStageFlags::VERTEX, 0..4)];
         let pipeline_layout = unsafe {
             device
                 .create_pipeline_layout(Some(&descriptor_set_layout), push_constants)
-                .map_err(|_| "Couldn't create the DearImGui pipeline layout")?
+                .map_err(|e| PipelineCreationError::PipelineLayout(e))?
         };
 
         let imgui_pipeline = {
@@ -985,7 +974,7 @@ impl<I: Instance> Renderer<I> {
             unsafe {
                 device
                     .create_graphics_pipeline(&desc, None)
-                    .map_err(|_| "Couldn't create the DearImGui graphics pipeline!")?
+                    .map_err(|e| PipelineCreationError::PipelineCreation(e))?
             }
         };
 
@@ -1179,17 +1168,12 @@ impl<I: Instance> Renderer<I> {
         device: &mut <I::Backend as Backend>::Device,
         buffer_bundle: &BufferBundle<I::Backend>,
         data: &'static [T],
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), MemoryWritingError> {
         unsafe {
-            let mut data_target = device
-                .acquire_mapping_writer(&buffer_bundle.memory, 0..buffer_bundle.requirements.size)
-                .map_err(|_| "Failed to acquire an buffer mapping writer!")?;
-
+            let mut data_target =
+                device.acquire_mapping_writer(&buffer_bundle.memory, 0..buffer_bundle.requirements.size)?;
             data_target[..data.len()].copy_from_slice(&data);
-
-            device
-                .release_mapping_writer(data_target)
-                .map_err(|_| "Couldn't release the buffer mapping writer!")?;
+            device.release_mapping_writer(data_target)?;
         };
 
         Ok(())

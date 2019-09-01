@@ -6,7 +6,7 @@ mod user_input;
 mod camera;
 pub mod rule_setter;
 
-pub use window::Window;
-pub use user_input::UserInput;
-pub use camera::Camera;
-pub use dear_imgui::Imgui;
+pub use window::*;
+pub use user_input::*;
+pub use camera::*;
+pub use dear_imgui::*;

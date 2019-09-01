@@ -38,10 +38,8 @@ impl Imgui {
             .prepare_frame(self.imgui.io_mut(), &window.window)
             .expect("Failed to prepare a frame");
         let ui = self.imgui.frame();
-
-        Window::new(&ui, im_str!("Hello world"))
-            .size([300.0, 100.0], Condition::FirstUseEver)
-            .build(|| {});
+        let mut okay = false;
+        ui.show_demo_window(&mut okay);
 
         UiHandler {
             ui,

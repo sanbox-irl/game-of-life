@@ -1,8 +1,10 @@
-use super::ecs::{rule_setter, Camera, Entity, Imgui, State, UserInput, Window};
+use super::ecs::{rule_setter, Camera, Entity, Imgui, State, UiHandler, UserInput, Window};
 use super::rendering::{
-    DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands, TypedRenderer,
+    DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands,
+    TypedRenderer,
 };
 use super::utilities::{Vec2, Vec2Int};
+use failure::Error;
 use std::time::Instant;
 use winit::VirtualKeyCode;
 
@@ -15,17 +17,14 @@ pub struct Game {
     renderer: Option<TypedRenderer>,
     camera: Camera,
     entities: Vec<Vec<Entity>>,
-    dear_imgui: Imgui,
 }
 
 impl Game {
-    pub fn new() -> Result<Self, &'static str> {
-        let window = Window::new(DEFAULT_SIZE).map_err(|_| "Couldn't create the window!")?;
+    pub fn new() -> Result<Self, Error> {
+        let window = Window::new(DEFAULT_SIZE)?;
         let user_input = UserInput::new();
 
-        let mut dear_imgui = Imgui::new(&window);
-
-        let renderer = TypedRenderer::typed_new(&window, &mut dear_imgui.imgui)?;
+        let renderer = TypedRenderer::typed_new(&window)?;
         let camera = Camera::new_at_position(Vec2::new(0.0, 0.0), 1.0);
 
         // Initialize Entities...
@@ -51,28 +50,33 @@ impl Game {
         entities[5][4].state = State::Alive;
         entities[6][4].state = State::Alive;
 
-        trace!("Entities: {:#?}", entities);
-
         Ok(Game {
             window,
             user_input,
             renderer: Some(renderer),
             entities,
             camera,
-            dear_imgui,
         })
     }
 
-    pub fn main_loop(&mut self) -> bool {
+    pub fn main_loop(&mut self) -> Result<(), Error> {
+        // Stacks:
         let mut time = Instant::now();
         let mut coords_pressed = vec![];
+        let mut dear_imgui = Imgui::new(&self.window);
+        if let Some(renderer) = &mut self.renderer {
+            renderer.initialize_imgui(&mut dear_imgui.imgui)?;
+        };
 
         loop {
+            let (size, ui_frame) = (
+                dear_imgui.imgui.io().display_size.into(),
+                dear_imgui.begin_frame(&self.window),
+            );
+
             // get input
             self.user_input.poll_events_loop(&mut self.window.events_loop);
-            if self.handle_window_events() == false {
-                break false;
-            }
+            self.handle_window_events()?;
 
             // update
             self.camera.update(
@@ -86,9 +90,6 @@ impl Game {
                     self.user_input.mouse_input.mouse_position,
                     self.window.get_window_size(),
                 );
-
-                info!("World Pos is {}", world_pos);
-                info!("--");
 
                 if let Ok(coord_pos) = world_pos.into_raw_usize() {
                     if coords_pressed.contains(&coord_pos) == false
@@ -117,9 +118,9 @@ impl Game {
             }
 
             // render
-            if self.render() == false {
+            if let Err(e) = self.render(size, ui_frame) {
                 self.renderer = None;
-                break false;
+                break Err(e);
             }
 
             {
@@ -133,16 +134,14 @@ impl Game {
             }
 
             if self.user_input.end_requested {
-                break true;
+                break Ok(());
             }
         }
     }
 
-    fn render(&mut self) -> bool {
+    fn render(&mut self, size: Vec2, ui_frame: UiHandler<'_>) -> Result<(), Error> {
         if let Some(renderer) = &mut self.renderer {
             let result = {
-                let size: Vec2 = self.dear_imgui.imgui.io().display_size.into();
-                let ui_frame = self.dear_imgui.begin_frame(&self.window);
                 ui_frame.prepare_draw(&self.window);
 
                 let instructions = RendererCommands {
@@ -165,7 +164,7 @@ impl Game {
                     if let Some(_) = sub_optimal {
                         Game::recreate_swapchain(renderer, &self.window)
                     } else {
-                        true
+                        Ok(())
                     }
                 }
 
@@ -181,29 +180,27 @@ impl Game {
                         error!("Auo-restarting Renderer...");
 
                         self.renderer = None;
-                        let ret = TypedRenderer::typed_new(&self.window, &mut self.dear_imgui.imgui);
-
+                        let ret = TypedRenderer::typed_new(&self.window);
                         match ret {
                             Ok(new_value) => {
                                 self.renderer = Some(new_value);
                                 debug!("Succesfully restarted Renderer!");
-                                true
+                                Ok(())
                             }
 
-                            Err(_) => {
-                                error!("Couldn't recover from error.");
-                                false
+                            Err(e) => {
+                                Err(e)
                             }
                         }
                     }
                 },
             }
         } else {
-            false
+            Err(format_err!("Couldn't find the renderer. This should never happen."))
         }
     }
 
-    fn handle_window_events(&mut self) -> bool {
+    fn handle_window_events(&mut self) -> Result<(), Error> {
         if self.user_input.new_frame_size.is_some() {
             debug!("Window changed size, creating a new swapchain...");
             if let Some(renderer) = &mut self.renderer {
@@ -214,21 +211,15 @@ impl Game {
                 info!("New Size is {:?}", new_size);
                 Game::recreate_swapchain(renderer, &self.window)
             } else {
-                false
+                Err(format_err!("Couldn't find the renderer. This should never happen"))
             }
         } else {
-            true
+            Ok(())
         }
     }
 
-    fn recreate_swapchain(renderer: &mut TypedRenderer, window: &Window) -> bool {
+    fn recreate_swapchain(renderer: &mut TypedRenderer, window: &Window) -> Result<(), Error> {
         debug!("Attempting to create a new swapchain!");
-        if let Err(e) = renderer.recreate_swapchain(&window.window) {
-            error!("{}", e);
-            error!("Couldn't recreate the swapchain. Exiting...");
-            false
-        } else {
-            true
-        }
+        renderer.recreate_swapchain(&window.window)
     }
 }

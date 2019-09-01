@@ -23,21 +23,21 @@ impl<B: Backend> PipelineBundle<B> {
         }
     }
 
-    pub fn allocate_descriptor_set(&mut self) -> Result<B::DescriptorSet, &'static str> {
+    pub fn allocate_descriptor_set(&mut self) -> Result<B::DescriptorSet, failure::Error> {
         match &mut self.descriptor_pool {
             Some(dp) => unsafe {
                 if let Some(descriptor_set_layout) = &self.descriptor_set_layout {
                     dp.allocate_set(descriptor_set_layout)
-                        .map_err(|_| "Couldn't allocate a descriptor set!")
+                        .map_err(|e| format_err!("Couldn't allocate a descriptor set! => {}", e))
                 } else {
-                    Err("Couldn't find the descriptor layout!")
+                    Err(format_err!("Couldn't find the descriptor layout!"))
                 }
             },
 
-            None => Err(
+            None => Err(format_err!(
                 "No descriptor pool has been created, but attempting to allocate a descriptor set!
                 Please make a descriptor pool first!",
-            ),
+            )),
         }
     }
 

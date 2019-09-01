@@ -1,13 +1,11 @@
 #![warn(elided_lifetimes_in_paths)]
 
-extern crate env_logger;
-extern crate winit;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate memoffset;
-extern crate gfx_hal;
-extern crate imgui;
+#[macro_use]
+extern crate failure;
 
 mod ecs;
 mod game;
@@ -19,16 +17,23 @@ fn main() {
 
     let mut game = match game::Game::new() {
         Ok(game) => game,
-        Err(err) => {
-            error!("{}", err);
+        Err(e) => {
+            error!("{}", e);
+            let causes = e.iter_causes();
+            for this_cause in causes {
+                error!("{}", this_cause);
+            }
             return;
         }
     };
-    let clean_exit = game.main_loop();
+    match game.main_loop() {
+        Ok(()) => {
+            info!("Exiting cleanly and gracefully.");
+        }
 
-    if clean_exit {
-        info!("Exiting cleanly and gracefully.");
-    } else {
-        error!("Exiting with error.");
+        Err(e) => {
+            error!("{}", e);
+            error!("{}", e.backtrace())
+        }
     }
 }

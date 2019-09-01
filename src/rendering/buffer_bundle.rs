@@ -1,3 +1,4 @@
+use super::{BufferBundleError, BufferError};
 use core::mem::ManuallyDrop;
 use gfx_hal::{
     adapter::{Adapter, MemoryTypeId, PhysicalDevice},
@@ -22,11 +23,11 @@ impl<B: Backend> BufferBundle<B> {
         device: &B::Device,
         size: u64,
         usage: buffer::Usage,
-    ) -> Result<Self, BufferBundleError> {
+    ) -> Result<Self, failure::Error> {
         unsafe {
             let mut buffer = device
                 .create_buffer(size, usage)
-                .map_err(|_| BufferBundleError::Creation)?;
+                .map_err(|e| BufferBundleError::Creation(e))?;
 
             let requirements = device.get_buffer_requirements(&buffer);
             let memory_type_id = adapter
@@ -40,18 +41,18 @@ impl<B: Backend> BufferBundle<B> {
                         && memory_type.properties.contains(Properties::CPU_VISIBLE)
                 })
                 .map(|(id, _)| MemoryTypeId(id))
-                .ok_or(BufferBundleError::MemoryId)?;
+                .ok_or(BufferError::MemoryId)?;
             let memory = device
                 .allocate_memory(memory_type_id, requirements.size)
-                .map_err(|_| BufferBundleError::Allocate)?;
+                .map_err(|e| BufferError::Allocate(e))?;
 
             device
                 .bind_buffer_memory(&memory, 0, &mut buffer)
-                .map_err(|_| BufferBundleError::Bind)?;
+                .map_err(|e| BufferError::Bind(e))?;
 
             let mapped = device
                 .map_memory(&memory, 0..requirements.size)
-                .map_err(|_| BufferBundleError::Map)?;
+                .map_err(|e| BufferError::Map(e))?;
 
             Ok(Self {
                 buffer: manual_new!(buffer),
@@ -85,20 +86,6 @@ impl<B: Backend> BufferBundle<B> {
         device.free_memory(ManuallyDrop::into_inner(read(&self.memory)));
     }
 }
-#[derive(Debug)]
-pub enum BufferBundleError {
-    Creation,
-    MemoryId,
-    Allocate,
-    Bind,
-    Map,
-}
-
-impl std::fmt::Display for BufferBundleError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Error allocating the Buffer Bundle!")
-    }
-}
 
 pub struct VertexIndexPairBufferBundle<B: Backend> {
     pub vertex_buffer: BufferBundle<B>,
@@ -112,7 +99,7 @@ impl<B: Backend> VertexIndexPairBufferBundle<B> {
         index_size: u64,
         device: &B::Device,
         adapter: &Adapter<B>,
-    ) -> Result<bool, BufferBundleError> {
+    ) -> Result<bool, failure::Error> {
         if self.vertex_buffer.has_room(vertex_size) == false
             || self.index_buffer.has_room(index_size) == false
         {

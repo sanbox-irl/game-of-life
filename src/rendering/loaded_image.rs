@@ -1,5 +1,4 @@
-use super::BufferBundle;
-use super::PipelineBundle;
+use super::{BufferBundle, BufferError, LoadedImageError, PipelineBundle};
 use core::mem::ManuallyDrop;
 use gfx_hal::{
     adapter::{Adapter, MemoryTypeId, PhysicalDevice},
@@ -37,7 +36,7 @@ impl<B: Backend> LoadedImage<B> {
         img: &[u8],
         width: usize,
         height: usize,
-    ) -> Result<Self, &'static str> {
+    ) -> Result<Self, failure::Error> {
         unsafe {
             // 0.   First we compute some memory related values:
             let pixel_size = size_of::<image::Rgba<u8>>();
@@ -51,13 +50,12 @@ impl<B: Backend> LoadedImage<B> {
             //      and a trsnfer_src image
             let required_bytes = (row_pitch * height) as u64;
             let staging_bundle =
-                BufferBundle::new(&adapter, device, required_bytes, buffer::Usage::TRANSFER_SRC)
-                    .map_err(|_| "Buffer Creation Errror!")?;
+                BufferBundle::new(&adapter, device, required_bytes, buffer::Usage::TRANSFER_SRC)?;
 
             // 2.   Use a mapping writer to put the image data into the buffer
             let mut writer = device
                 .acquire_mapping_writer::<u8>(&staging_bundle.memory, 0..staging_bundle.requirements.size)
-                .map_err(|_| "Couldn't acquire a mapping writer to the staging buffer!")?;
+                .map_err(|e| LoadedImageError::AcquireMappingWriter(e))?;
 
             for y in 0..height {
                 let row = &(*img)[y * row_size..(y + 1) * row_size];
@@ -66,7 +64,7 @@ impl<B: Backend> LoadedImage<B> {
             }
             device
                 .release_mapping_writer(writer)
-                .map_err(|_| "Couldn't release the mapping writer to the staging buffer!")?;
+                .map_err(|e| LoadedImageError::ReleaseMappingWriter(e))?;
 
             //  3. Make the image
             let mut image_object = device
@@ -78,7 +76,7 @@ impl<B: Backend> LoadedImage<B> {
                     Usage::TRANSFER_DST | Usage::SAMPLED,
                     gfx_hal::image::ViewCapabilities::empty(),
                 )
-                .map_err(|_| "Couldn't create the image!")?;
+                .map_err(|e| LoadedImageError::CreateImage(e))?;
 
             //  4. allocate the memory and bind it
             let requirements = device.get_image_requirements(&image_object);
@@ -93,13 +91,13 @@ impl<B: Backend> LoadedImage<B> {
                         && memory_type.properties.contains(Properties::DEVICE_LOCAL)
                 })
                 .map(|(id, _)| MemoryTypeId(id))
-                .ok_or("Couldn't find a memory type to support the image!")?;
+                .ok_or(BufferError::MemoryId)?;
             let memory = device
                 .allocate_memory(memory_type_id, requirements.size)
-                .map_err(|_| "Couldn't allocate image memory!")?;
+                .map_err(|e| BufferError::Allocate(e))?;
             device
                 .bind_image_memory(&memory, 0, &mut image_object)
-                .map_err(|_| "Couldn't bind the image memory!")?;
+                .map_err(|e| BufferError::Bind(e))?;
 
             // 5. create image view and sampler
             let image_view = device
@@ -114,14 +112,14 @@ impl<B: Backend> LoadedImage<B> {
                         layers: 0..1,
                     },
                 )
-                .map_err(|_| "Couldn't create the image view!")?;
+                .map_err(|e| LoadedImageError::ImageView(e))?;
 
             let sampler = device
                 .create_sampler(gfx_hal::image::SamplerInfo::new(
                     gfx_hal::image::Filter::Nearest,
                     gfx_hal::image::WrapMode::Clamp,
                 ))
-                .map_err(|_| "Couldn't create the sampler!")?;
+                .map_err(|e| LoadedImageError::Sampler(e))?;
 
             // 6. create the command buffer
             let mut cmd_buffer = command_pool.acquire_command_buffer::<gfx_hal::command::OneShot>();
@@ -193,18 +191,19 @@ impl<B: Backend> LoadedImage<B> {
 
             let upload_fence = device
                 .create_fence(false)
-                .map_err(|_| "Couldn't create upload fence!")?;
+                .map_err(|e| LoadedImageError::UploadFence(e))?;
             command_queue.submit_without_semaphores(Some(&cmd_buffer), Some(&upload_fence));
             device
                 .wait_for_fence(&upload_fence, core::u64::MAX)
-                .map_err(|_| "Couldn't wait for the fence!")?;
+                .map_err(|e| LoadedImageError::WaitForFence(e))?;
             device.destroy_fence(upload_fence);
 
             //  11. Kill off our buffer!
             staging_bundle.manually_drop(device);
             command_pool.free(Some(cmd_buffer));
 
-            let descriptor_set = pipeline_bundle.allocate_descriptor_set()?;
+            let descriptor_set = pipeline_bundle
+                .allocate_descriptor_set()?;
 
             let texture = Self {
                 image: manual_new!(image_object),

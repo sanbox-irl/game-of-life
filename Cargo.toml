@@ -5,12 +5,13 @@ authors = ["jjspira"]
 edition = "2018"
 
 [features]
-default = ["vulkan"]
+default = ["metal"]
 metal = ["gfx-backend-metal"]
 dx12 = ["gfx-backend-dx12"]
 vulkan = ["gfx-backend-vulkan"]
 
 [dependencies]
+failure = "0.1.5"
 winit = "0.19.2"
 log = "0.4.8"
 env_logger = "0.6.2"
