@@ -6,6 +6,8 @@ extern crate log;
 extern crate memoffset;
 #[macro_use]
 extern crate failure;
+#[macro_use]
+extern crate imgui;
 
 mod ecs;
 mod game;

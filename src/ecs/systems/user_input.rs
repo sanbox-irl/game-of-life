@@ -143,10 +143,18 @@ impl UserInput {
                     self.record_input(state, code, &keys_pressed_last_frame);
                 }
             }
-            _ => (),
-        });
 
-        
+            Event::WindowEvent {
+                event: WindowEvent::ReceivedCharacter(c),
+                ..
+            } => {
+                if c != '\u{7f}' && c != '\u{8}' {
+                    self.kb_input.received_char.push(c);
+                }
+            }
+
+            _ => {}
+        });
     }
 
     pub fn clear_input(&mut self) {
@@ -166,7 +174,7 @@ impl UserInput {
             ElementState::Pressed => {
                 if let None = last_frame_pressed.iter().position(|&pos| pos == code) {
                     if let None = self.kb_input.held_keys.iter().position(|&pos| pos == code) {
-                        trace!("Pressed key {:?}", code);
+                        info!("Pressed key {:?}", code);
                         self.kb_input.pressed_keys.push(code);
                         self.kb_input.held_keys.push(code);
                     }
@@ -190,6 +198,7 @@ pub struct MouseInput {
     pub mouse_pressed: [bool; 5],
     pub mouse_held: [bool; 5],
     pub mouse_released: [bool; 5],
+    pub mouse_input_taken: bool
 }
 
 impl MouseInput {
@@ -201,22 +210,25 @@ impl MouseInput {
             *elem = false;
         }
         self.mouse_vertical_scroll_delta = 0.0;
+        self.mouse_input_taken = false;
     }
 
-
+    #[allow(dead_code)]
     pub fn is_pressed(&self, mouse_button: MouseButton) -> bool {
         let index: usize = mouse_button.into();
-        self.mouse_pressed[index]
+        self.mouse_pressed[index] && self.mouse_input_taken == false
     }
 
+    #[allow(dead_code)]
     pub fn is_held(&self, mouse_button: MouseButton) -> bool {
         let index: usize = mouse_button.into();
-        self.mouse_held[index]
+        self.mouse_held[index] && self.mouse_input_taken == false
     }
 
+    #[allow(dead_code)]
     pub fn is_released(&self, mouse_button: MouseButton) -> bool {
         let index: usize = mouse_button.into();
-        self.mouse_released[index]
+        self.mouse_released[index] || self.mouse_input_taken
     }
 }
 
@@ -244,6 +256,7 @@ pub struct KeyboardInput {
     pub pressed_keys: ArrayVec<[VirtualKeyCode; 10]>,
     pub held_keys: ArrayVec<[VirtualKeyCode; 10]>,
     pub released_keys: ArrayVec<[VirtualKeyCode; 10]>,
+    pub received_char: ArrayVec<[char; 10]>,
 }
 
 macro_rules! quick_find {
@@ -256,20 +269,21 @@ impl KeyboardInput {
     pub fn clear(&mut self) {
         self.pressed_keys.clear();
         self.released_keys.clear();
+        self.received_char.clear();
     }
 
     #[allow(dead_code)]
-    pub fn is_pressed(&mut self, target_keycode: VirtualKeyCode) -> bool {
+    pub fn is_pressed(&self, target_keycode: VirtualKeyCode) -> bool {
         quick_find!(self.pressed_keys, target_keycode).is_some()
     }
 
     #[allow(dead_code)]
-    pub fn is_held(&mut self, target_keycode: VirtualKeyCode) -> bool {
+    pub fn is_held(&self, target_keycode: VirtualKeyCode) -> bool {
         quick_find!(self.held_keys, target_keycode).is_some()
     }
 
     #[allow(dead_code)]
-    pub fn is_released(&mut self, target_keycode: VirtualKeyCode) -> bool {
+    pub fn is_released(&self, target_keycode: VirtualKeyCode) -> bool {
         quick_find!(self.released_keys, target_keycode).is_some()
     }
 }

@@ -29,6 +29,8 @@ impl<B: Backend> BufferBundle<B> {
                 .create_buffer(size, usage)
                 .map_err(|e| BufferBundleError::Creation(e))?;
 
+            println!("Buffer is {:?}", buffer);
+
             let requirements = device.get_buffer_requirements(&buffer);
             let memory_type_id = adapter
                 .physical_device
@@ -76,6 +78,7 @@ impl<B: Backend> BufferBundle<B> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn has_room(&self, size: u64) -> bool {
         self.requirements.size >= size
     }
@@ -90,26 +93,45 @@ impl<B: Backend> BufferBundle<B> {
 pub struct VertexIndexPairBufferBundle<B: Backend> {
     pub vertex_buffer: BufferBundle<B>,
     pub index_buffer: BufferBundle<B>,
+    pub num_vert: usize,
+    pub num_idx: usize,
 }
 
 impl<B: Backend> VertexIndexPairBufferBundle<B> {
     pub fn update_size(
         &mut self,
-        vertex_size: u64,
-        index_size: u64,
+        vertex_size: usize,
+        index_size: usize,
+        new_num_vert: usize,
+        new_num_idx: usize,
         device: &B::Device,
         adapter: &Adapter<B>,
     ) -> Result<bool, failure::Error> {
-        if self.vertex_buffer.has_room(vertex_size) == false
-            || self.index_buffer.has_room(index_size) == false
-        {
-            let new_vertex = BufferBundle::new(adapter, device, vertex_size, buffer::Usage::VERTEX)?;
-            let new_index = BufferBundle::new(adapter, device, index_size, buffer::Usage::VERTEX)?;
+        if self.num_vert < new_num_vert || self.num_idx < new_num_idx {
+            println!(
+                "Updating our imgui-buffer! Old size was [{}, {}], new size is [{}, {}]",
+                self.num_vert, self.num_idx, new_num_vert, new_num_idx
+            );
+            let new_vertex = BufferBundle::new(
+                adapter,
+                device,
+                (vertex_size * new_num_vert) as u64,
+                buffer::Usage::VERTEX,
+            )?;
 
-            self.manually_drop(device);
+            let new_index = BufferBundle::new(
+                adapter,
+                device,
+                (index_size * new_num_idx) as u64,
+                buffer::Usage::INDEX,
+            )?;
+
+            self.manually_drop_parts(device);
 
             self.vertex_buffer = new_vertex;
             self.index_buffer = new_index;
+            self.num_vert = new_num_vert;
+            self.num_idx = new_num_idx;
 
             Ok(true)
         } else {
@@ -117,7 +139,7 @@ impl<B: Backend> VertexIndexPairBufferBundle<B> {
         }
     }
 
-    pub fn manually_drop(&self, device: &B::Device) {
+    pub fn manually_drop_parts(&self, device: &B::Device) {
         unsafe {
             self.vertex_buffer.manually_drop(device);
             self.index_buffer.manually_drop(device);

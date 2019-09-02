@@ -1,4 +1,4 @@
-use super::ecs::{rule_setter, Camera, Entity, Imgui, MouseButton, State, UiHandler, UserInput, Window};
+use super::ecs::{Camera, Entity, Gameplay, Imgui, MouseButton, State, UiHandler, UserInput, Window};
 use super::rendering::{
     DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands, TypedRenderer,
 };
@@ -15,6 +15,7 @@ pub struct Game {
     user_input: UserInput,
     renderer: Option<TypedRenderer>,
     camera: Camera,
+    gameplay: Gameplay,
     entities: Vec<Vec<Entity>>,
 }
 
@@ -55,17 +56,18 @@ impl Game {
             renderer: Some(renderer),
             entities,
             camera,
+            gameplay: Gameplay::default(),
         })
     }
 
     pub fn main_loop(&mut self) -> Result<(), Error> {
         // Stacks:
         let mut time = Instant::now();
-        let mut coords_pressed = vec![];
         let mut dear_imgui = Imgui::new(&self.window);
         if let Some(renderer) = &mut self.renderer {
             renderer.initialize_imgui(&mut dear_imgui.imgui)?;
         };
+        let mut frame_count = 0;
 
         loop {
             // get input
@@ -73,11 +75,12 @@ impl Game {
             self.handle_window_events()?;
 
             // update
-            dear_imgui.take_input(&self.user_input.kb_input.held_keys, &self.user_input.mouse_input);
+            dear_imgui.take_input(&mut self.user_input);
             let (size, ui_frame) = (
                 dear_imgui.imgui.io().display_size.into(),
                 dear_imgui.begin_frame(&self.window),
             );
+            Imgui::make_ui(&ui_frame, &mut self.gameplay);
 
             self.camera.update(
                 &self.user_input.kb_input.held_keys,
@@ -85,6 +88,7 @@ impl Game {
                 self.user_input.mouse_input.mouse_vertical_scroll_delta,
             );
 
+            // Single selection
             if self.user_input.mouse_input.is_held(MouseButton::Left) {
                 let world_pos = self.camera.display_to_world_position(
                     self.user_input.mouse_input.mouse_position,
@@ -92,22 +96,17 @@ impl Game {
                 );
 
                 if let Ok(coord_pos) = world_pos.into_raw_usize() {
-                    if coords_pressed.contains(&coord_pos) == false
-                        && coord_pos.0 < self.entities.len()
-                        && coord_pos.1 < self.entities[0].len()
-                    {
-                        self.entities[coord_pos.0][coord_pos.1].flip_state();
-                        coords_pressed.push(coord_pos);
+                    if coord_pos.0 < self.entities.len() && coord_pos.1 < self.entities[0].len() {
+                        self.gameplay
+                            .select(coord_pos, &mut self.entities[coord_pos.0][coord_pos.1]);
                     }
                 }
             }
 
-            if self.user_input.mouse_input.is_released(MouseButton::Left) {
-                coords_pressed.clear();
-            }
+            self.gameplay.update_inputs(&self.user_input);
 
             if self.user_input.kb_input.is_pressed(VirtualKeyCode::Return) {
-                rule_setter::set_rules(&mut self.entities);
+                Gameplay::set_rules(&mut self.entities);
             }
 
             // render
@@ -115,11 +114,6 @@ impl Game {
                 self.renderer = None;
                 break Err(e);
             }
-
-            println!(
-                "Input Keys: {:#?}",
-                self.user_input.kb_input.held_keys
-            );
 
             {
                 let new_time = Instant::now();
@@ -134,6 +128,7 @@ impl Game {
             if self.user_input.end_requested {
                 break Ok(());
             }
+            frame_count += 1;
         }
     }
 

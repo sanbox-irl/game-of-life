@@ -33,9 +33,9 @@ use gfx_backend_metal as back;
 use gfx_backend_vulkan as back;
 
 use super::{
-    BufferBundle, DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, LoadedImage,
-    MemoryWritingError, PipelineBundle, PipelineCreationError, RendererCommands,
-    RendererCreationError, Vertex, VertexIndexPairBufferBundle, Window, QUAD_INDICES, QUAD_VERTICES,
+    BufferBundle, DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, LoadedImage, MemoryWritingError,
+    PipelineBundle, PipelineCreationError, RendererCommands, RendererCreationError, Vertex,
+    VertexIndexPairBufferBundle, Window, QUAD_INDICES, QUAD_VERTICES,
 };
 
 const VERTEX_PUSH_CONSTANTS_SIZE: u32 = 6;
@@ -355,6 +355,8 @@ impl<I: Instance> Renderer<I> {
         vertex_index_buffer_bundles.push(VertexIndexPairBufferBundle {
             vertex_buffer,
             index_buffer,
+            num_vert: 4,
+            num_idx: 6,
         });
 
         Ok(Self {
@@ -616,6 +618,8 @@ impl<I: Instance> Renderer<I> {
             .push(VertexIndexPairBufferBundle {
                 vertex_buffer,
                 index_buffer,
+                num_vert: 1000,
+                num_idx: 1000,
             });
 
         Ok(())
@@ -1048,8 +1052,10 @@ impl<I: Instance> Renderer<I> {
     ) -> Result<(), DrawingError> {
         buffer_bundle
             .update_size(
-                (imgui_data.draw_data.total_vtx_count as usize * mem::size_of::<DrawVert>()) as u64,
-                (imgui_data.draw_data.total_idx_count as usize * mem::size_of::<DrawIdx>()) as u64,
+                mem::size_of::<DrawVert>(),
+                mem::size_of::<DrawIdx>(),
+                imgui_data.draw_data.total_vtx_count as usize,
+                imgui_data.draw_data.total_idx_count as usize,
                 &device,
                 &adapter,
             )
@@ -1059,6 +1065,7 @@ impl<I: Instance> Renderer<I> {
         let VertexIndexPairBufferBundle {
             vertex_buffer: imgui_vertex_buffer,
             index_buffer: imgui_index_buffer,
+            ..
         } = buffer_bundle;
 
         // Bind pipeline
@@ -1205,7 +1212,7 @@ impl<I: Instance> core::ops::Drop for Renderer<I> {
             }
 
             for this_bundled_bundle in self.vertex_index_buffer_bundles.drain(..) {
-                this_bundled_bundle.manually_drop(&self.device);
+                this_bundled_bundle.manually_drop_parts(&self.device);
             }
 
             // LAST RESORT STYLE CODE, NOT TO BE IMITATED LIGHTLY
