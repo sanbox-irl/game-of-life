@@ -1,7 +1,6 @@
-use super::ecs::{rule_setter, Camera, Entity, Imgui, State, UiHandler, UserInput, Window};
+use super::ecs::{rule_setter, Camera, Entity, Imgui, MouseButton, State, UiHandler, UserInput, Window};
 use super::rendering::{
-    DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands,
-    TypedRenderer,
+    DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands, TypedRenderer,
 };
 use super::utilities::{Vec2, Vec2Int};
 use failure::Error;
@@ -69,23 +68,24 @@ impl Game {
         };
 
         loop {
-            let (size, ui_frame) = (
-                dear_imgui.imgui.io().display_size.into(),
-                dear_imgui.begin_frame(&self.window),
-            );
-
             // get input
             self.user_input.poll_events_loop(&mut self.window.events_loop);
             self.handle_window_events()?;
 
             // update
+            dear_imgui.take_input(&self.user_input.kb_input.held_keys, &self.user_input.mouse_input);
+            let (size, ui_frame) = (
+                dear_imgui.imgui.io().display_size.into(),
+                dear_imgui.begin_frame(&self.window),
+            );
+
             self.camera.update(
                 &self.user_input.kb_input.held_keys,
                 0.05,
                 self.user_input.mouse_input.mouse_vertical_scroll_delta,
             );
 
-            if self.user_input.mouse_input.mouse_held {
+            if self.user_input.mouse_input.is_held(MouseButton::Left) {
                 let world_pos = self.camera.display_to_world_position(
                     self.user_input.mouse_input.mouse_position,
                     self.window.get_window_size(),
@@ -102,18 +102,11 @@ impl Game {
                 }
             }
 
-            if self.user_input.mouse_input.mouse_released {
+            if self.user_input.mouse_input.is_released(MouseButton::Left) {
                 coords_pressed.clear();
             }
 
-            if self
-                .user_input
-                .kb_input
-                .pressed_keys
-                .iter()
-                .find(|&&key| key == VirtualKeyCode::Return)
-                .is_some()
-            {
+            if self.user_input.kb_input.is_pressed(VirtualKeyCode::Return) {
                 rule_setter::set_rules(&mut self.entities);
             }
 
@@ -123,13 +116,18 @@ impl Game {
                 break Err(e);
             }
 
+            println!(
+                "Input Keys: {:#?}",
+                self.user_input.kb_input.held_keys
+            );
+
             {
                 let new_time = Instant::now();
                 let difference = new_time.duration_since(time);
-                trace!(
-                    "FrameTime: {}",
-                    difference.as_secs() as f32 + difference.subsec_nanos() as f32 * 1e-9
-                );
+                // trace!(
+                //     "FrameTime: {}",
+                //     difference.as_secs() as f32 + difference.subsec_nanos() as f32 * 1e-9
+                // );
                 time = new_time;
             }
 
@@ -188,15 +186,15 @@ impl Game {
                                 Ok(())
                             }
 
-                            Err(e) => {
-                                Err(e)
-                            }
+                            Err(e) => Err(e),
                         }
                     }
                 },
             }
         } else {
-            Err(format_err!("Couldn't find the renderer. This should never happen."))
+            Err(format_err!(
+                "Couldn't find the renderer. This should never happen."
+            ))
         }
     }
 
@@ -211,7 +209,9 @@ impl Game {
                 info!("New Size is {:?}", new_size);
                 Game::recreate_swapchain(renderer, &self.window)
             } else {
-                Err(format_err!("Couldn't find the renderer. This should never happen"))
+                Err(format_err!(
+                    "Couldn't find the renderer. This should never happen"
+                ))
             }
         } else {
             Ok(())

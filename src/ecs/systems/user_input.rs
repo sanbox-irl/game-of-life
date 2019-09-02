@@ -2,7 +2,7 @@ use super::Vec2;
 use arrayvec::ArrayVec;
 use winit::{
     dpi::LogicalPosition, DeviceEvent, ElementState, Event, EventsLoop, KeyboardInput as WinitKeyboardInput,
-    MouseButton, MouseScrollDelta, VirtualKeyCode, WindowEvent,
+    MouseButton as WinitMouseButton, MouseScrollDelta, VirtualKeyCode, WindowEvent,
 };
 
 #[derive(Debug)]
@@ -66,14 +66,21 @@ impl UserInput {
                 event:
                     WindowEvent::MouseInput {
                         state: ElementState::Pressed,
-                        button: MouseButton::Left,
+                        button,
                         ..
                     },
                 ..
             } => {
-                if mouse_button_clicked_last_frame == false {
-                    self.mouse_input.mouse_pressed = true;
-                    self.mouse_input.mouse_held = true;
+                let this_button = match button {
+                    WinitMouseButton::Left => 0,
+                    WinitMouseButton::Right => 1,
+                    WinitMouseButton::Middle => 2,
+                    WinitMouseButton::Other(num) => num as usize,
+                };
+
+                if mouse_button_clicked_last_frame[this_button] == false {
+                    self.mouse_input.mouse_pressed[this_button] = true;
+                    self.mouse_input.mouse_held[this_button] = true;
                 }
             }
 
@@ -81,16 +88,23 @@ impl UserInput {
                 event:
                     WindowEvent::MouseInput {
                         state: ElementState::Released,
-                        button: MouseButton::Left,
+                        button,
                         ..
                     },
                 ..
             } => {
-                if self.mouse_input.mouse_pressed || self.mouse_input.mouse_held {
-                    self.mouse_input.mouse_pressed = false;
-                    self.mouse_input.mouse_held = false;
+                let this_button = match button {
+                    WinitMouseButton::Left => 0,
+                    WinitMouseButton::Right => 1,
+                    WinitMouseButton::Middle => 2,
+                    WinitMouseButton::Other(num) => num as usize,
+                };
 
-                    self.mouse_input.mouse_released = true;
+                if self.mouse_input.mouse_pressed[this_button] || self.mouse_input.mouse_held[this_button] {
+                    self.mouse_input.mouse_pressed[this_button] = false;
+                    self.mouse_input.mouse_held[this_button] = false;
+
+                    self.mouse_input.mouse_released[this_button] = true;
                 }
             }
 
@@ -131,6 +145,8 @@ impl UserInput {
             }
             _ => (),
         });
+
+        
     }
 
     pub fn clear_input(&mut self) {
@@ -171,16 +187,55 @@ impl UserInput {
 pub struct MouseInput {
     pub mouse_position: Vec2,
     pub mouse_vertical_scroll_delta: f32,
-    pub mouse_pressed: bool,
-    pub mouse_held: bool,
-    pub mouse_released: bool,
+    pub mouse_pressed: [bool; 5],
+    pub mouse_held: [bool; 5],
+    pub mouse_released: [bool; 5],
 }
 
 impl MouseInput {
     pub fn clear(&mut self) {
-        self.mouse_pressed = false;
-        self.mouse_released = false;
+        for elem in self.mouse_pressed.iter_mut() {
+            *elem = false;
+        }
+        for elem in self.mouse_released.iter_mut() {
+            *elem = false;
+        }
         self.mouse_vertical_scroll_delta = 0.0;
+    }
+
+
+    pub fn is_pressed(&self, mouse_button: MouseButton) -> bool {
+        let index: usize = mouse_button.into();
+        self.mouse_pressed[index]
+    }
+
+    pub fn is_held(&self, mouse_button: MouseButton) -> bool {
+        let index: usize = mouse_button.into();
+        self.mouse_held[index]
+    }
+
+    pub fn is_released(&self, mouse_button: MouseButton) -> bool {
+        let index: usize = mouse_button.into();
+        self.mouse_released[index]
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    Generic(usize),
+}
+
+impl From<MouseButton> for usize {
+    fn from(w: MouseButton) -> usize {
+        match w {
+            MouseButton::Left => 0,
+            MouseButton::Right => 1,
+            MouseButton::Middle => 2,
+            MouseButton::Generic(index) => index,
+        }
     }
 }
 
@@ -191,9 +246,30 @@ pub struct KeyboardInput {
     pub released_keys: ArrayVec<[VirtualKeyCode; 10]>,
 }
 
+macro_rules! quick_find {
+    ($iterable:expr, $target:expr) => {
+        $iterable.iter().find(|&&x| x == $target)
+    };
+}
+
 impl KeyboardInput {
     pub fn clear(&mut self) {
         self.pressed_keys.clear();
         self.released_keys.clear();
+    }
+
+    #[allow(dead_code)]
+    pub fn is_pressed(&mut self, target_keycode: VirtualKeyCode) -> bool {
+        quick_find!(self.pressed_keys, target_keycode).is_some()
+    }
+
+    #[allow(dead_code)]
+    pub fn is_held(&mut self, target_keycode: VirtualKeyCode) -> bool {
+        quick_find!(self.held_keys, target_keycode).is_some()
+    }
+
+    #[allow(dead_code)]
+    pub fn is_released(&mut self, target_keycode: VirtualKeyCode) -> bool {
+        quick_find!(self.released_keys, target_keycode).is_some()
     }
 }

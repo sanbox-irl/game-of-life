@@ -26,7 +26,8 @@ fn main() {
             return;
         }
     };
-    match game.main_loop() {
+    let end_game = game.main_loop();
+    match end_game {
         Ok(()) => {
             info!("Exiting cleanly and gracefully.");
         }
@@ -35,5 +36,5 @@ fn main() {
             error!("{}", e);
             error!("{}", e.backtrace())
         }
-    }
+    };
 }

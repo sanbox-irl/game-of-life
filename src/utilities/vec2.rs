@@ -150,3 +150,9 @@ impl From<[f32; 2]> for Vec2 {
         Vec2 { x: w[0], y: w[1] }
     }
 }
+
+impl From<Vec2> for [f32; 2] {
+    fn from(w: Vec2) -> [f32; 2] {
+        [w.x, w.y]
+    }
+}
