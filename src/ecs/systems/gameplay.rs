@@ -1,6 +1,6 @@
 use super::{Entity, MouseButton, State, UserInput};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Gameplay {
     pub auto_increment: bool,
     pub increment_rate: f32,
@@ -130,6 +130,17 @@ impl Gameplay {
                 Move::Negative => current - 1,
                 Move::Remain => current,
             }
+        }
+    }
+}
+
+impl Default for Gameplay {
+    fn default() -> Self {
+        Gameplay {
+            auto_increment: false,
+            coords_pressed: Vec::new(),
+            increment_rate: 0.0,
+            single_selection: true,
         }
     }
 }

@@ -1,11 +1,12 @@
 use super::{Gameplay, UserInput, Window as WinitWindow};
-use imgui::{Condition, Context, Direction, FontConfig, FontSource, ImGuiWindowFlags, Ui, Window};
+use imgui::{Condition, Context, FontConfig, FontSource, ImGuiWindowFlags, Ui, Window};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 
 #[allow(dead_code)]
 pub struct Imgui {
     pub imgui: Context,
     pub platform: WinitPlatform,
+    pub do_not_draw: bool,
 }
 
 #[allow(dead_code)]
@@ -16,18 +17,20 @@ impl Imgui {
         imgui.set_ini_filename(None);
 
         let mut platform = WinitPlatform::init(&mut imgui);
-        platform.attach_window(imgui.io_mut(), &window.window, HiDpiMode::Locked(1.0));
+        platform.attach_window(imgui.io_mut(), &window.window, HiDpiMode::Default);
 
-        let hidpi_factor = platform.hidpi_factor();
-        let font_size = (26.0 * hidpi_factor) as f32;
         imgui.fonts().add_font(&[FontSource::DefaultFontData {
             config: Some(FontConfig {
-                size_pixels: font_size,
+                size_pixels: (13.0 * platform.hidpi_factor()) as f32,
                 ..FontConfig::default()
             }),
         }]);
 
-        Imgui { imgui, platform }
+        Imgui {
+            imgui,
+            platform,
+            do_not_draw: false,
+        }
     }
 
     pub fn take_input(&mut self, user_input: &mut UserInput) {
@@ -56,8 +59,12 @@ impl Imgui {
             }
         }
 
+        if user_input.kb_input.is_pressed(Key::F1) {
+            self.do_not_draw = !self.do_not_draw;
+        }
+
         let mouse_input = &user_input.mouse_input;
-        io.mouse_pos = (mouse_input.mouse_position * 2.0).into();
+        io.mouse_pos = (mouse_input.mouse_position * self.platform.hidpi_factor() as f32).into();
         io.mouse_down = mouse_input.mouse_held;
         io.mouse_wheel = mouse_input.mouse_vertical_scroll_delta;
 
@@ -67,6 +74,7 @@ impl Imgui {
 
         if io.mouse_down[0] && io.want_capture_mouse {
             user_input.mouse_input.mouse_input_taken = true;
+            println!("Took input!");
         }
     }
 
@@ -74,16 +82,25 @@ impl Imgui {
         self.platform
             .prepare_frame(self.imgui.io_mut(), &window.window)
             .expect("Failed to prepare a frame");
+
+        self.platform
+            .attach_window(self.imgui.io_mut(), &window.window, HiDpiMode::Default);
+
         let ui = self.imgui.frame();
 
         UiHandler {
             ui,
             platform: &self.platform,
+            do_not_draw: self.do_not_draw,
         }
     }
 
     pub fn make_ui(ui_handler: &UiHandler<'_>, gameplay: &mut Gameplay) {
         let ui = &ui_handler.ui;
+
+        if ui_handler.do_not_draw {
+            return;
+        }
 
         // Auto-Increment World
         Window::new(ui, im_str!("Game of Life"))
@@ -107,15 +124,17 @@ impl Imgui {
                 }
             });
 
+        const TWS: f32 = 1280.0;
         Window::new(ui, im_str!("Tools"))
-            .size([1600.0, 100.0], Condition::FirstUseEver)
+            .size([TWS, 100.0], Condition::FirstUseEver)
             .flags(ImGuiWindowFlags::NoResize)
             .title_bar(false)
             .build(|| {
                 const VERT_SIZE: f32 = 82.0;
-                const SPACE: f32 = 25.0;
-                let mut horizontal = 550.0;
-                ui.same_line(50.0);
+                const SPACE: f32 = TWS / 64.0;
+                let mut horizontal = TWS / 32.0;
+                ui.same_line(horizontal);
+                let size = TWS / 3.2;
                 // Selection
                 let change = ui.button(
                     &im_str!(
@@ -126,8 +145,9 @@ impl Imgui {
                             "Single"
                         }
                     ),
-                    [500.0, VERT_SIZE],
+                    [size, VERT_SIZE],
                 );
+                horizontal += size;
 
                 if change {
                     gameplay.single_selection = !gameplay.single_selection;
@@ -137,23 +157,25 @@ impl Imgui {
                 ui.same_line(horizontal);
 
                 // Tools
-                horizontal += 200.0;
-                let copy = ui.button(im_str!("Copy"), [200.0, VERT_SIZE]);
+                let size = TWS / 8.0;
+                horizontal += size;
+                let copy = ui.button(im_str!("Copy"), [size, VERT_SIZE]);
                 horizontal += SPACE;
                 ui.same_line(horizontal);
 
-                horizontal += 200.0;
-                let cut = ui.button(im_str!("Cut"), [200.0, VERT_SIZE]);
+                horizontal += size;
+                let cut = ui.button(im_str!("Cut"), [size, VERT_SIZE]);
                 horizontal += SPACE;
                 ui.same_line(horizontal);
 
-                horizontal += 200.0;
-                let paste = ui.button(im_str!("Paste"), [200.0, VERT_SIZE]);
+                horizontal += size;
+                let paste = ui.button(im_str!("Paste"), [size, VERT_SIZE]);
                 horizontal += SPACE;
                 ui.same_line(horizontal);
 
-                horizontal += 300.0;
-                let shapes = ui.button(im_str!("Copy Prefab"), [300.0, VERT_SIZE]);
+                let size = TWS / 5.33;
+                horizontal += size;
+                let shapes = ui.button(im_str!("Copy Prefab"), [size, VERT_SIZE]);
             });
 
         Window::new(ui, im_str!("Instructions"))
@@ -241,6 +263,7 @@ Press F1 to hide all UI."
 pub struct UiHandler<'a> {
     pub ui: Ui<'a>,
     pub platform: &'a WinitPlatform,
+    pub do_not_draw: bool,
 }
 
 impl<'a> UiHandler<'a> {

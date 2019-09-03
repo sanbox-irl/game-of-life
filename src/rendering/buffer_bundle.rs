@@ -29,8 +29,6 @@ impl<B: Backend> BufferBundle<B> {
                 .create_buffer(size, usage)
                 .map_err(|e| BufferBundleError::Creation(e))?;
 
-            println!("Buffer is {:?}", buffer);
-
             let requirements = device.get_buffer_requirements(&buffer);
             let memory_type_id = adapter
                 .physical_device

@@ -193,12 +193,13 @@ impl UserInput {
 
 #[derive(Debug, Default)]
 pub struct MouseInput {
+    pub mouse_position_last_frame: Vec2,
     pub mouse_position: Vec2,
     pub mouse_vertical_scroll_delta: f32,
     pub mouse_pressed: [bool; 5],
     pub mouse_held: [bool; 5],
     pub mouse_released: [bool; 5],
-    pub mouse_input_taken: bool
+    pub mouse_input_taken: bool,
 }
 
 impl MouseInput {
@@ -209,6 +210,7 @@ impl MouseInput {
         for elem in self.mouse_released.iter_mut() {
             *elem = false;
         }
+        self.mouse_position_last_frame = self.mouse_position;
         self.mouse_vertical_scroll_delta = 0.0;
         self.mouse_input_taken = false;
     }
@@ -229,6 +231,10 @@ impl MouseInput {
     pub fn is_released(&self, mouse_button: MouseButton) -> bool {
         let index: usize = mouse_button.into();
         self.mouse_released[index] || self.mouse_input_taken
+    }
+
+    pub fn mouse_delta_position(&self) -> Vec2 {
+        self.mouse_position - self.mouse_position_last_frame
     }
 }
 

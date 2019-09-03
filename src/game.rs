@@ -8,7 +8,7 @@ use std::time::Instant;
 use winit::VirtualKeyCode;
 
 const DEFAULT_SIZE: Vec2 = Vec2 { x: 1280.0, y: 720.0 };
-const ARRAY_SIZE: Vec2Int = Vec2Int { x: 11, y: 11 };
+const ARRAY_SIZE: Vec2Int = Vec2Int { x: 21, y: 21 };
 
 pub struct Game {
     window: Window,
@@ -82,11 +82,7 @@ impl Game {
             );
             Imgui::make_ui(&ui_frame, &mut self.gameplay);
 
-            self.camera.update(
-                &self.user_input.kb_input.held_keys,
-                0.05,
-                self.user_input.mouse_input.mouse_vertical_scroll_delta,
-            );
+            self.camera.update(&self.user_input);
 
             // Single selection
             if self.user_input.mouse_input.is_held(MouseButton::Left) {
