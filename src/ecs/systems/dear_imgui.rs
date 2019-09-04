@@ -1,4 +1,4 @@
-use super::{Gameplay, UserInput, Window as WinitWindow};
+use super::{Gameplay, Time, UserInput, Vec2, Window as WinitWindow};
 use imgui::{Condition, Context, FontConfig, FontSource, ImGuiWindowFlags, Ui, Window};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 
@@ -6,7 +6,6 @@ use imgui_winit_support::{HiDpiMode, WinitPlatform};
 pub struct Imgui {
     pub imgui: Context,
     pub platform: WinitPlatform,
-    pub do_not_draw: bool,
 }
 
 #[allow(dead_code)]
@@ -26,11 +25,7 @@ impl Imgui {
             }),
         }]);
 
-        Imgui {
-            imgui,
-            platform,
-            do_not_draw: false,
-        }
+        Imgui { imgui, platform }
     }
 
     pub fn take_input(&mut self, user_input: &mut UserInput) {
@@ -59,10 +54,6 @@ impl Imgui {
             }
         }
 
-        if user_input.kb_input.is_pressed(Key::F1) {
-            self.do_not_draw = !self.do_not_draw;
-        }
-
         let mouse_input = &user_input.mouse_input;
         io.mouse_pos = (mouse_input.mouse_position * self.platform.hidpi_factor() as f32).into();
         io.mouse_down = mouse_input.mouse_held;
@@ -74,7 +65,6 @@ impl Imgui {
 
         if io.mouse_down[0] && io.want_capture_mouse {
             user_input.mouse_input.mouse_input_taken = true;
-            println!("Took input!");
         }
     }
 
@@ -91,123 +81,157 @@ impl Imgui {
         UiHandler {
             ui,
             platform: &self.platform,
-            do_not_draw: self.do_not_draw,
+            size: window.get_window_size(),
         }
     }
 
     pub fn make_ui(ui_handler: &UiHandler<'_>, gameplay: &mut Gameplay) {
         let ui = &ui_handler.ui;
 
-        if ui_handler.do_not_draw {
+        if gameplay.show_ui == false {
             return;
         }
 
         // Auto-Increment World
-        Window::new(ui, im_str!("Game of Life"))
-            .size([800.0, 400.0], Condition::FirstUseEver)
-            .flags(ImGuiWindowFlags::NoResize)
+        let auto_increment_window =
+            Window::new(ui, im_str!("Game of Life")).size([800.0, 400.0], Condition::FirstUseEver);
+
+        auto_increment_window
+            // .flags(ImGuiWindowFlags::NoResize)
             .build(|| {
                 // Mode
                 let do_auto_increment =
-                    ui.radio_button_bool(im_str!("Auto-Increment"), gameplay.auto_increment);
+                    ui.radio_button_bool(im_str!("Automatically Increment"), gameplay.auto_increment);
+
+                if gameplay.auto_increment {
+                    let a = ui.push_item_width(80.0);
+                    ui.slider_float(
+                        im_str!("Per Second"),
+                        &mut gameplay.increment_rate,
+                        0.0,
+                        25.0,
+                    )
+                    .build();
+                    drop(a);
+
+                    ui.same_line(175.0);
+
+                    let play_pause = ui.button(
+                        if gameplay.playing {
+                            im_str!("Pause (space)")
+                        } else {
+                            im_str!("Play (space)")
+                        },
+                        [100.0, 20.0],
+                    );
+                    if play_pause {
+                        gameplay.playing = !gameplay.playing;
+                    }
+                }
                 let do_manual_increment =
                     ui.radio_button_bool(im_str!("Manual Increment"), !gameplay.auto_increment);
 
                 if do_auto_increment || do_manual_increment {
                     gameplay.auto_increment = !gameplay.auto_increment;
                 }
-
-                if gameplay.auto_increment {
-                    ui.separator();
-                    ui.input_float(im_str!("Increments Per Second"), &mut gameplay.increment_rate)
-                        .build();
-                }
             });
 
-        const TWS: f32 = 1280.0;
-        Window::new(ui, im_str!("Tools"))
-            .size([TWS, 100.0], Condition::FirstUseEver)
-            .flags(ImGuiWindowFlags::NoResize)
-            .title_bar(false)
-            .build(|| {
-                const VERT_SIZE: f32 = 82.0;
-                const SPACE: f32 = TWS / 64.0;
-                let mut horizontal = TWS / 32.0;
-                ui.same_line(horizontal);
-                let size = TWS / 3.2;
-                // Selection
-                let change = ui.button(
-                    &im_str!(
-                        "Change to: {} Cell Mode",
-                        if gameplay.single_selection {
-                            "Multiple"
-                        } else {
-                            "Single"
-                        }
-                    ),
-                    [size, VERT_SIZE],
-                );
-                horizontal += size;
+        if gameplay.show_instructions {
+            Window::new(ui, im_str!("Instructions"))
+                .size([400.0, 200.0], Condition::FirstUseEver)
+                .flags(ImGuiWindowFlags::NoResize)
+                .position(
+                    ((ui_handler.size / 2.0) - Vec2::new(200.0, 100.0)).into(),
+                    Condition::Always,
+                )
+                .title_bar(false)
+                .build(|| {
+                    ui.text_wrapped(im_str!(
+                        "INSTRUCTIONS:
 
-                if change {
-                    gameplay.single_selection = !gameplay.single_selection;
-                }
+CLICK on a cell to change it from LIVE to DEAD.
+Use the MOUSE WHEEL to zoom in and out.
 
-                horizontal += SPACE;
-                ui.same_line(horizontal);
+Click on a Prefab below, then on a cell,
+to PASTE it into the world.
 
-                // Tools
-                let size = TWS / 8.0;
-                horizontal += size;
-                let copy = ui.button(im_str!("Copy"), [size, VERT_SIZE]);
-                horizontal += SPACE;
-                ui.same_line(horizontal);
-
-                horizontal += size;
-                let cut = ui.button(im_str!("Cut"), [size, VERT_SIZE]);
-                horizontal += SPACE;
-                ui.same_line(horizontal);
-
-                horizontal += size;
-                let paste = ui.button(im_str!("Paste"), [size, VERT_SIZE]);
-                horizontal += SPACE;
-                ui.same_line(horizontal);
-
-                let size = TWS / 5.33;
-                horizontal += size;
-                let shapes = ui.button(im_str!("Copy Prefab"), [size, VERT_SIZE]);
-            });
-
-        Window::new(ui, im_str!("Instructions"))
-            .size([500.0, 350.0], Condition::FirstUseEver)
-            .flags(ImGuiWindowFlags::NoResize)
-            .title_bar(false)
-            .build(|| {
-                ui.text_wrapped(im_str!(
-                    "INSTRUCTIONS:
-Use Enter to advance world.
-Click and drag multi-selection to move.
-Control-Z to undo user-action.
-Control-B to undo auto-world advancement.
-Press the X to remove these instructions. F2 returns them.
+Press F2 to bring these instructions back.
 Press F1 to hide all UI."
-                ));
-            });
+                    ));
+                    // ui.same_line_with_spacing(0.0, 20.0);
+                    ui.spacing();
+                    ui.spacing();
+                    ui.spacing();
+                    ui.spacing();
 
+                    ui.indent_by(150.0);
+                    let pressed = ui.button(im_str!("Okay, got it"), [100.0, 25.0]);
+                    if pressed {
+                        gameplay.show_instructions = false;
+                    }
+                });
+        }
+
+        // PREFABS
+        const PWS: f32 = 1000.0;
+        const PWH: f32 = 75.0;
+        const BUTTON: f32 = PWS / 7.0;
         Window::new(ui, im_str!("Prefabs"))
-            .size([200.0, 1000.0], Condition::FirstUseEver)
+            .size([PWS, PWH], Condition::FirstUseEver)
+            .position(
+                [(ui_handler.size.x - PWS) / 2.0, (ui_handler.size.y - PWH * 2.0)],
+                Condition::Always,
+            )
             .flags(ImGuiWindowFlags::NoResize)
             .title_bar(false)
             .build(|| {
-                ui.button(im_str!("Glider"), [200.0, 50.0]);
-                ui.button(im_str!("Small Exploder"), [200.0, 50.0]);
-                ui.button(im_str!("Exploder"), [200.0, 50.0]);
-                ui.button(im_str!("Spaceship"), [200.0, 50.0]);
-                ui.button(im_str!("Tumbler"), [200.0, 50.0]);
-                ui.button(im_str!("Glider Gun"), [200.0, 50.0]);
+                let mut horizontal = PWS / 14.0;
+
+                ui.spacing();
+                ui.spacing();
+
+                ui.same_line(horizontal);
+                ui.button(im_str!("Glider"), [BUTTON, 50.0]);
+                horizontal += BUTTON;
+
+                ui.same_line(horizontal);
+                ui.button(im_str!("Small Exploder"), [BUTTON, 50.0]);
+                horizontal += BUTTON;
+
+                ui.same_line(horizontal);
+                ui.button(im_str!("Exploder"), [BUTTON, 50.0]);
+                horizontal += BUTTON;
+
+                ui.same_line(horizontal);
+                ui.button(im_str!("Spaceship"), [BUTTON, 50.0]);
+                horizontal += BUTTON;
+
+                ui.same_line(horizontal);
+                ui.button(im_str!("Tumbler"), [BUTTON, 50.0]);
+                horizontal += BUTTON;
+
+                ui.same_line(horizontal);
+                ui.button(im_str!("Glider Gun"), [BUTTON, 50.0]);
+                horizontal += BUTTON;
+                horizontal += PWS / 14.0;
+
+                ui.same_line(horizontal);
             });
     }
 
+    pub fn make_debug_ui(ui_handler: &UiHandler<'_>, gameplay: &Gameplay, time: &Time) {
+        let ui = &ui_handler.ui;
+        if gameplay.show_debug {
+            return;
+        }
+
+        // DEBUG
+        Window::new(ui, im_str!("Debug Output"))
+            .size([300.0, 80.0], Condition::FirstUseEver)
+            .build(|| {
+                ui.label_text(im_str!("Delta Time:"), &im_str!("{}", time.delta_time));
+            });
+    }
     fn convert_vk_to_imgui_key(key: &Key) -> Option<usize> {
         Some(match key {
             Key::Tab => 0,
@@ -263,7 +287,7 @@ Press F1 to hide all UI."
 pub struct UiHandler<'a> {
     pub ui: Ui<'a>,
     pub platform: &'a WinitPlatform,
-    pub do_not_draw: bool,
+    pub size: Vec2,
 }
 
 impl<'a> UiHandler<'a> {

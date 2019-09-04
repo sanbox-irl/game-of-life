@@ -1,11 +1,11 @@
-use super::ecs::{Camera, Entity, Gameplay, Imgui, MouseButton, State, UiHandler, UserInput, Window};
+use super::ecs::{
+    Borders, Camera, Entity, Gameplay, Imgui, MouseButton, State, UiHandler, UserInput, Window,
+};
 use super::rendering::{
     DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands, TypedRenderer,
 };
-use super::utilities::{Vec2, Vec2Int};
+use super::utilities::{Time, Vec2, Vec2Int};
 use failure::Error;
-use std::time::Instant;
-use winit::VirtualKeyCode;
 
 const DEFAULT_SIZE: Vec2 = Vec2 { x: 1280.0, y: 720.0 };
 const ARRAY_SIZE: Vec2Int = Vec2Int { x: 21, y: 21 };
@@ -17,6 +17,7 @@ pub struct Game {
     camera: Camera,
     gameplay: Gameplay,
     entities: Vec<Vec<Entity>>,
+    time: Time,
 }
 
 impl Game {
@@ -57,17 +58,17 @@ impl Game {
             entities,
             camera,
             gameplay: Gameplay::default(),
+            time: Time::new(),
         })
     }
 
     pub fn main_loop(&mut self) -> Result<(), Error> {
         // Stacks:
-        let mut time = Instant::now();
         let mut dear_imgui = Imgui::new(&self.window);
         if let Some(renderer) = &mut self.renderer {
             renderer.initialize_imgui(&mut dear_imgui.imgui)?;
         };
-        let mut frame_count = 0;
+        self.time.game_start();
 
         loop {
             // get input
@@ -76,11 +77,10 @@ impl Game {
 
             // update
             dear_imgui.take_input(&mut self.user_input);
-            let (size, ui_frame) = (
-                dear_imgui.imgui.io().display_size.into(),
-                dear_imgui.begin_frame(&self.window),
-            );
+            let ui_frame = dear_imgui.begin_frame(&self.window);
+
             Imgui::make_ui(&ui_frame, &mut self.gameplay);
+            Imgui::make_debug_ui(&ui_frame, &self.gameplay, &self.time);
 
             self.camera.update(&self.user_input);
 
@@ -93,42 +93,28 @@ impl Game {
 
                 if let Ok(coord_pos) = world_pos.into_raw_usize() {
                     if coord_pos.0 < self.entities.len() && coord_pos.1 < self.entities[0].len() {
-                        self.gameplay
-                            .select(coord_pos, &mut self.entities[coord_pos.0][coord_pos.1]);
+                        self.gameplay.select(coord_pos, &mut self.entities);
                     }
                 }
             }
-
-            self.gameplay.update_inputs(&self.user_input);
-
-            if self.user_input.kb_input.is_pressed(VirtualKeyCode::Return) {
-                Gameplay::set_rules(&mut self.entities);
-            }
+            self.gameplay
+                .update(&self.user_input, &mut self.entities, &self.time);
 
             // render
-            if let Err(e) = self.render(size, ui_frame) {
+            if let Err(e) = self.render(ui_frame) {
                 self.renderer = None;
                 break Err(e);
-            }
-
-            {
-                let new_time = Instant::now();
-                let difference = new_time.duration_since(time);
-                // trace!(
-                //     "FrameTime: {}",
-                //     difference.as_secs() as f32 + difference.subsec_nanos() as f32 * 1e-9
-                // );
-                time = new_time;
             }
 
             if self.user_input.end_requested {
                 break Ok(());
             }
-            frame_count += 1;
+
+            self.time.end_frame();
         }
     }
 
-    fn render(&mut self, size: Vec2, ui_frame: UiHandler<'_>) -> Result<(), Error> {
+    fn render(&mut self, ui_frame: UiHandler<'_>) -> Result<(), Error> {
         if let Some(renderer) = &mut self.renderer {
             let result = {
                 ui_frame.prepare_draw(&self.window);
@@ -142,7 +128,7 @@ impl Game {
                     }),
                     imgui_draw_commands: Some(ImGuiDrawCommands {
                         draw_data: ui_frame.ui.render(),
-                        imgui_dimensions: size,
+                        imgui_dimensions: ui_frame.size,
                     }),
                 };
 

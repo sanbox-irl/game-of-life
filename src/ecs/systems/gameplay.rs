@@ -1,24 +1,58 @@
-use super::{Entity, MouseButton, State, UserInput};
+use super::{Entity, MouseButton, State, Time, UserInput};
+use winit::VirtualKeyCode as Key;
+
+type UsizeTuple = (usize, usize);
 
 #[derive(Debug)]
 pub struct Gameplay {
     pub auto_increment: bool,
     pub increment_rate: f32,
-    pub single_selection: bool,
-    coords_pressed: Vec<(usize, usize)>,
+    pub current_time: f32,
+    pub playing: bool,
+    pub coords_pressed: Vec<UsizeTuple>,
+    pub show_debug: bool,
+    pub show_instructions: bool,
+    pub show_ui: bool,
 }
 
 impl Gameplay {
-    pub fn select(&mut self, coord_pos: (usize, usize), entity: &mut Entity) {
-        if self.single_selection && self.coords_pressed.contains(&coord_pos) == false {
+    pub fn select(&mut self, coord_pos: UsizeTuple, entities: &mut [Vec<Entity>]) {
+        if self.coords_pressed.contains(&coord_pos) == false {
+            let entity = &mut entities[coord_pos.0][coord_pos.1];
             entity.flip_state();
             self.coords_pressed.push(coord_pos);
         }
     }
 
-    pub fn update_inputs(&mut self, user_input: &UserInput) {
+    pub fn update(&mut self, user_input: &UserInput, entities: &mut [Vec<Entity>], time: &Time) {
         if user_input.mouse_input.is_released(MouseButton::Left) {
             self.coords_pressed.clear();
+        }
+
+        let mut do_not_update_again = false;
+        if user_input.kb_input.is_pressed(Key::Return) {
+            Gameplay::set_rules(entities);
+            do_not_update_again = true;
+        }
+
+        if user_input.kb_input.is_pressed(Key::F1) {
+            self.show_ui = !self.show_ui;
+        }
+
+        if user_input.kb_input.is_pressed(Key::F2) {
+            self.show_instructions = !self.show_instructions;
+        }
+
+        if user_input.kb_input.is_pressed(Key::F10) {
+            self.show_debug = !self.show_debug;
+        }
+
+        self.current_time += time.delta_time;
+        if self.increment_rate != 0.0 && self.current_time > self.increment_rate {
+            if do_not_update_again == false {
+                Gameplay::set_rules(entities);
+            }
+            self.current_time = 0.0;
         }
     }
 
@@ -140,7 +174,11 @@ impl Default for Gameplay {
             auto_increment: false,
             coords_pressed: Vec::new(),
             increment_rate: 0.0,
-            single_selection: true,
+            show_debug: true,
+            current_time: 0.0,
+            show_instructions: true,
+            show_ui: true,
+            playing: false,
         }
     }
 }

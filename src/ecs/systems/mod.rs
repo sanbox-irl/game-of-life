@@ -1,4 +1,4 @@
-pub use super::{Vec2, Entity, Vec2Int, State};
+pub use super::{Vec2, Entity, Vec2Int, State, Borders, Time};
 
 mod dear_imgui;
 mod window;
