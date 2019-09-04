@@ -6,12 +6,12 @@ type UsizeTuple = (usize, usize);
 #[derive(Debug)]
 pub struct Gameplay {
     pub auto_increment: bool,
-    pub increment_rate: f32,
-    pub current_time: f32,
-    pub playing: bool,
     pub coords_pressed: Vec<UsizeTuple>,
     pub show_debug: bool,
     pub show_instructions: bool,
+    pub increment_rate: f32,
+    pub current_time: f32,
+    pub playing: bool,
     pub show_ui: bool,
 }
 

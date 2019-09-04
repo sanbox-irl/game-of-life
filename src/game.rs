@@ -77,9 +77,9 @@ impl Game {
 
             // update
             dear_imgui.take_input(&mut self.user_input);
-            let ui_frame = dear_imgui.begin_frame(&self.window);
+            let mut ui_frame = dear_imgui.begin_frame(&self.window);
 
-            Imgui::make_ui(&ui_frame, &mut self.gameplay);
+            Imgui::make_ui(&mut ui_frame, &mut self.gameplay);
             Imgui::make_debug_ui(&ui_frame, &self.gameplay, &self.time);
 
             self.camera.update(&self.user_input);

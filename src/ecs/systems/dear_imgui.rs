@@ -1,6 +1,7 @@
 use super::{Gameplay, Time, UserInput, Vec2, Window as WinitWindow};
 use imgui::{Condition, Context, FontConfig, FontSource, ImGuiWindowFlags, Ui, Window};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
+use std::collections::HashMap;
 
 #[allow(dead_code)]
 pub struct Imgui {
@@ -82,10 +83,11 @@ impl Imgui {
             ui,
             platform: &self.platform,
             size: window.get_window_size(),
+            map: HashMap::new(),
         }
     }
 
-    pub fn make_ui(ui_handler: &UiHandler<'_>, gameplay: &mut Gameplay) {
+    pub fn make_ui(ui_handler: &mut UiHandler<'_>, gameplay: &mut Gameplay) {
         let ui = &ui_handler.ui;
 
         if gameplay.show_ui == false {
@@ -93,11 +95,21 @@ impl Imgui {
         }
 
         // Auto-Increment World
-        let auto_increment_window =
-            Window::new(ui, im_str!("Game of Life")).size([800.0, 400.0], Condition::FirstUseEver);
-
-        auto_increment_window
-            // .flags(ImGuiWindowFlags::NoResize)
+        Window::new(ui, im_str!("Game of Life"))
+            .size([300.0, 100.0], Condition::FirstUseEver)
+            .position(
+                [
+                    ui_handler.size.x - ((ui_handler.size.x - PWS) / 2.0) - 300.0,
+                    (ui_handler.size.y - PWH * 1.5) - 100.0,
+                ],
+                Condition::Always,
+            )
+            .flags(
+                ImGuiWindowFlags::NoResize
+                    | ImGuiWindowFlags::NoScrollbar
+                    | ImGuiWindowFlags::NoTitleBar
+                    | ImGuiWindowFlags::NoMove,
+            )
             .build(|| {
                 // Mode
                 let do_auto_increment =
@@ -105,13 +117,8 @@ impl Imgui {
 
                 if gameplay.auto_increment {
                     let a = ui.push_item_width(80.0);
-                    ui.slider_float(
-                        im_str!("Per Second"),
-                        &mut gameplay.increment_rate,
-                        0.0,
-                        25.0,
-                    )
-                    .build();
+                    ui.slider_float(im_str!("Per Second"), &mut gameplay.increment_rate, 0.0, 25.0)
+                        .build();
                     drop(a);
 
                     ui.same_line(175.0);
@@ -179,7 +186,7 @@ Press F1 to hide all UI."
         Window::new(ui, im_str!("Prefabs"))
             .size([PWS, PWH], Condition::FirstUseEver)
             .position(
-                [(ui_handler.size.x - PWS) / 2.0, (ui_handler.size.y - PWH * 2.0)],
+                [(ui_handler.size.x - PWS) / 2.0, (ui_handler.size.y - PWH * 1.5)],
                 Condition::Always,
             )
             .flags(ImGuiWindowFlags::NoResize)
@@ -288,6 +295,7 @@ pub struct UiHandler<'a> {
     pub ui: Ui<'a>,
     pub platform: &'a WinitPlatform,
     pub size: Vec2,
+    pub map: HashMap<&'static str, Vec2>,
 }
 
 impl<'a> UiHandler<'a> {
