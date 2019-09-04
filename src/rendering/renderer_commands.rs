@@ -1,4 +1,4 @@
-use super::{Entity, Vec2};
+use super::{Entity, Vec2, GameColors};
 
 pub struct RendererCommands<'a> {
     pub game_world_draw_commands: Option<GameWorldDrawCommands<'a>>,
@@ -7,6 +7,7 @@ pub struct RendererCommands<'a> {
 
 pub struct GameWorldDrawCommands<'a> {
     pub entities: &'a mut [Vec<Entity>],
+    pub game_colors: &'a GameColors,
     pub camera_position: &'a Vec2,
     pub camera_scale: f32,
     pub aspect_ratio: f32,

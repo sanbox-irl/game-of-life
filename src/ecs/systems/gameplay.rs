@@ -1,4 +1,4 @@
-use super::{Entity, MouseButton, State, Time, UserInput};
+use super::{Color, Entity, MouseButton, State, Time, UserInput};
 use winit::VirtualKeyCode as Key;
 
 type UsizeTuple = (usize, usize);
@@ -9,10 +9,13 @@ pub struct Gameplay {
     pub coords_pressed: Vec<UsizeTuple>,
     pub show_debug: bool,
     pub show_instructions: bool,
+    pub show_play_control: bool,
+    pub show_color_control: bool,
     pub increment_rate: f32,
     pub current_time: f32,
     pub playing: bool,
     pub show_ui: bool,
+    pub game_colors: GameColors,
 }
 
 impl Gameplay {
@@ -47,12 +50,14 @@ impl Gameplay {
             self.show_debug = !self.show_debug;
         }
 
-        self.current_time += time.delta_time;
-        if self.increment_rate != 0.0 && self.current_time > self.increment_rate {
-            if do_not_update_again == false {
-                Gameplay::set_rules(entities);
+        if self.auto_increment && self.playing {
+            self.current_time += time.delta_time;
+            if self.increment_rate != 0.0 && self.current_time > (1.0 / self.increment_rate) {
+                if do_not_update_again == false {
+                    Gameplay::set_rules(entities);
+                }
+                self.current_time = 0.0;
             }
-            self.current_time = 0.0;
         }
     }
 
@@ -179,6 +184,9 @@ impl Default for Gameplay {
             show_instructions: true,
             show_ui: true,
             playing: false,
+            show_play_control: true,
+            show_color_control: false,
+            game_colors: GameColors::default(),
         }
     }
 }
@@ -196,6 +204,37 @@ impl Move {
             Move::Positive => Move::Negative,
             Move::Negative => Move::Positive,
             Move::Remain => Move::Remain,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct GameColors {
+    pub alive: Color,
+    pub dead: Color,
+    pub unborn: Color,
+    pub bg: Color,
+    pub grid_lines: bool,
+}
+
+impl GameColors {
+    pub fn get_color(&self, state: State) -> &Color {
+        match state {
+            State::Alive => &self.alive,
+            State::Dead => &self.dead,
+            State::Unborn => &self.unborn,
+        }
+    }
+}
+
+impl Default for GameColors {
+    fn default() -> Self {
+        Self {
+            alive: Color::with_u8(17, 54, 12),
+            dead: Color::with_u8(47, 29, 24),
+            unborn: Color::with_u8(139, 110, 101),
+            bg: Color::with_u8(139, 110, 101),
+            grid_lines: true,
         }
     }
 }

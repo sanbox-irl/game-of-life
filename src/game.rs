@@ -1,5 +1,5 @@
 use super::ecs::{
-    Borders, Camera, Entity, Gameplay, Imgui, MouseButton, State, UiHandler, UserInput, Window,
+    Camera, Entity, Gameplay, Imgui, MouseButton, State, UiHandler, UserInput, Window,
 };
 use super::rendering::{
     DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands, TypedRenderer,
@@ -125,6 +125,7 @@ impl Game {
                         camera_position: &self.camera.position,
                         camera_scale: self.camera.scale,
                         entities: &mut self.entities,
+                        game_colors: &self.gameplay.game_colors,
                     }),
                     imgui_draw_commands: Some(ImGuiDrawCommands {
                         draw_data: ui_frame.ui.render(),

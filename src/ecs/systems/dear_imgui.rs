@@ -1,5 +1,5 @@
-use super::{Gameplay, Time, UserInput, Vec2, Window as WinitWindow};
-use imgui::{Condition, Context, FontConfig, FontSource, ImGuiWindowFlags, Ui, Window};
+use super::{Color, Gameplay, Time, UserInput, Vec2, Window as WinitWindow};
+use imgui::{Condition, Context, FontConfig, FontSource, ImGuiWindowFlags, ImStr, StyleVar, Ui, Window};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use std::collections::HashMap;
 
@@ -88,60 +88,83 @@ impl Imgui {
     }
 
     pub fn make_ui(ui_handler: &mut UiHandler<'_>, gameplay: &mut Gameplay) {
-        let ui = &ui_handler.ui;
+        let ui = &mut ui_handler.ui;
 
         if gameplay.show_ui == false {
             return;
         }
 
-        // Auto-Increment World
-        Window::new(ui, im_str!("Game of Life"))
-            .size([300.0, 100.0], Condition::FirstUseEver)
-            .position(
-                [
-                    ui_handler.size.x - ((ui_handler.size.x - PWS) / 2.0) - 300.0,
-                    (ui_handler.size.y - PWH * 1.5) - 100.0,
-                ],
-                Condition::Always,
-            )
-            .flags(
-                ImGuiWindowFlags::NoResize
-                    | ImGuiWindowFlags::NoScrollbar
-                    | ImGuiWindowFlags::NoTitleBar
-                    | ImGuiWindowFlags::NoMove,
-            )
-            .build(|| {
-                // Mode
-                let do_auto_increment =
-                    ui.radio_button_bool(im_str!("Automatically Increment"), gameplay.auto_increment);
-
-                if gameplay.auto_increment {
-                    let a = ui.push_item_width(80.0);
-                    ui.slider_float(im_str!("Per Second"), &mut gameplay.increment_rate, 0.0, 25.0)
-                        .build();
-                    drop(a);
-
-                    ui.same_line(175.0);
-
-                    let play_pause = ui.button(
-                        if gameplay.playing {
-                            im_str!("Pause (space)")
-                        } else {
-                            im_str!("Play (space)")
-                        },
-                        [100.0, 20.0],
-                    );
-                    if play_pause {
-                        gameplay.playing = !gameplay.playing;
+        if gameplay.show_color_control {
+            Window::new(ui, im_str!("Color"))
+                .size([300.0, 100.0], Condition::FirstUseEver)
+                .build(|| {
+                    fn make_color<'p>(label: &'p ImStr, color: &mut Color, ui: &mut Ui<'_>) {
+                        let mut bg_color: [f32; 3] = color.clone().into();
+                        let do_it = ui.color_edit(label, &mut bg_color).build();
+                        // let do_it = ui.slider_float3(label, &mut bg_color, 0.0, 1.0).build();
+                        if do_it {
+                            *color = bg_color.into();
+                        }
                     }
-                }
-                let do_manual_increment =
-                    ui.radio_button_bool(im_str!("Manual Increment"), !gameplay.auto_increment);
 
-                if do_auto_increment || do_manual_increment {
-                    gameplay.auto_increment = !gameplay.auto_increment;
-                }
-            });
+                    make_color(im_str!("Alive"), &mut gameplay.game_colors.alive, ui);
+                    make_color(im_str!("Dead"), &mut gameplay.game_colors.dead, ui);
+                    make_color(im_str!("Unborn"), &mut gameplay.game_colors.unborn, ui);
+                    make_color(im_str!("Background"), &mut gameplay.game_colors.bg, ui);
+                    ui.checkbox(im_str!("Grid Lines"), &mut gameplay.game_colors.grid_lines);
+                });
+        }
+
+        // Auto-Increment World
+        if gameplay.show_play_control {
+            Window::new(ui, im_str!("Game of Life"))
+                .size([300.0, 100.0], Condition::FirstUseEver)
+                .position(
+                    [
+                        ui_handler.size.x - ((ui_handler.size.x - PWS) / 2.0) - 300.0,
+                        (ui_handler.size.y - PWH * 1.5) - 100.0,
+                    ],
+                    Condition::Always,
+                )
+                .flags(
+                    ImGuiWindowFlags::NoResize
+                        | ImGuiWindowFlags::NoScrollbar
+                        | ImGuiWindowFlags::NoTitleBar
+                        | ImGuiWindowFlags::NoMove,
+                )
+                .build(|| {
+                    // Mode
+                    let do_auto_increment =
+                        ui.radio_button_bool(im_str!("Automatically Increment"), gameplay.auto_increment);
+
+                    if gameplay.auto_increment {
+                        let a = ui.push_item_width(80.0);
+                        ui.slider_float(im_str!("Per Second"), &mut gameplay.increment_rate, 0.0, 50.0)
+                            .build();
+                        drop(a);
+
+                        ui.same_line(175.0);
+
+                        let play_pause = ui.button(
+                            if gameplay.playing {
+                                im_str!("Pause (space)")
+                            } else {
+                                im_str!("Play (space)")
+                            },
+                            [100.0, 20.0],
+                        );
+                        if play_pause {
+                            gameplay.playing = !gameplay.playing;
+                        }
+                    }
+                    let do_manual_increment =
+                        ui.radio_button_bool(im_str!("Manual Increment"), !gameplay.auto_increment);
+
+                    if do_auto_increment || do_manual_increment {
+                        gameplay.auto_increment = !gameplay.auto_increment;
+                    }
+                });
+        }
 
         if gameplay.show_instructions {
             Window::new(ui, im_str!("Instructions"))
@@ -192,7 +215,7 @@ Press F1 to hide all UI."
             .flags(ImGuiWindowFlags::NoResize)
             .title_bar(false)
             .build(|| {
-                let mut horizontal = PWS / 14.0;
+                let mut horizontal = PWS / 125.0;
 
                 ui.spacing();
                 ui.spacing();
@@ -219,10 +242,15 @@ Press F1 to hide all UI."
 
                 ui.same_line(horizontal);
                 ui.button(im_str!("Glider Gun"), [BUTTON, 50.0]);
-                horizontal += BUTTON;
-                horizontal += PWS / 14.0;
+                horizontal += BUTTON + PWS / 125.0;
 
                 ui.same_line(horizontal);
+
+                ui.child_frame(im_str!("Options"), [BUTTON, 50.0]).build(|| {
+                    let _style = ui.push_style_var(StyleVar::ItemSpacing([0.0, 10.0]));
+                    ui.checkbox(im_str!("Play Panel"), &mut gameplay.show_play_control);
+                    ui.checkbox(im_str!("Color Panel"), &mut gameplay.show_color_control);
+                });
             });
     }
 

@@ -1007,15 +1007,14 @@ impl<I: Instance> Renderer<I> {
             index_type: IndexType::U16,
         });
 
-        let mut vertex_push_constants: [u32; VERTEX_PUSH_CONSTANTS_SIZE] =
-            [0; VERTEX_PUSH_CONSTANTS_SIZE];
+        let mut vertex_push_constants: [u32; VERTEX_PUSH_CONSTANTS_SIZE] = [0; VERTEX_PUSH_CONSTANTS_SIZE];
         vertex_push_constants[2] = game_world.camera_position.x.to_bits();
         vertex_push_constants[3] = game_world.camera_position.y.to_bits();
         vertex_push_constants[4] = game_world.camera_scale.to_bits();
         vertex_push_constants[5] = game_world.aspect_ratio.to_bits();
 
-        let mut frag_push_constants: [u32; FRAG_PUSH_CONSTANTS_SIZE] = 
-            [0; FRAG_PUSH_CONSTANTS_SIZE];
+        let mut frag_push_constants: [u32; FRAG_PUSH_CONSTANTS_SIZE] = [0; FRAG_PUSH_CONSTANTS_SIZE];
+        frag_push_constants[3] = game_world.game_colors.grid_lines.into();
 
         for row in game_world.entities {
             for entity in row {
@@ -1025,11 +1024,10 @@ impl<I: Instance> Renderer<I> {
                 vertex_push_constants[1] = bits[1];
 
                 // Fragment push Constants
-                let color_bits = entity.state.to_color_bits();
+                let color_bits: [u32; 3] = game_world.game_colors.get_color(entity.state).into_raw_u32();
                 frag_push_constants[0] = color_bits[0];
                 frag_push_constants[1] = color_bits[1];
                 frag_push_constants[2] = color_bits[2];
-                frag_push_constants[3] = entity.selection_borders.bits();
 
                 encoder.push_graphics_constants(
                     &quad_pipeline.pipeline_layout,
