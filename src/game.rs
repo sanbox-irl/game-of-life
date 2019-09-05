@@ -1,10 +1,9 @@
-use super::ecs::{
-    Camera, Entity, Gameplay, Imgui, MouseButton, State, UiHandler, UserInput, Window,
-};
+use super::ecs::{Camera, Entity, Gameplay, Imgui, MouseButton, State, UiHandler, UserInput, Window};
 use super::rendering::{
     DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands, TypedRenderer,
 };
 use super::utilities::{Time, Vec2, Vec2Int};
+use anymap::AnyMap;
 use failure::Error;
 
 const DEFAULT_SIZE: Vec2 = Vec2 { x: 1280.0, y: 720.0 };
@@ -18,6 +17,7 @@ pub struct Game {
     gameplay: Gameplay,
     entities: Vec<Vec<Entity>>,
     time: Time,
+    resources: AnyMap,
 }
 
 impl Game {
@@ -51,6 +51,10 @@ impl Game {
         entities[5][4].state = State::Alive;
         entities[6][4].state = State::Alive;
 
+        // Resources
+        let resources = AnyMap::new();
+        resources.insert(12);
+
         Ok(Game {
             window,
             user_input,
@@ -59,6 +63,7 @@ impl Game {
             camera,
             gameplay: Gameplay::default(),
             time: Time::new(),
+            resources,
         })
     }
 

@@ -794,7 +794,7 @@ impl<I: Instance> Renderer<I> {
             unsafe {
                 device
                     .create_graphics_pipeline(&desc, None)
-                    .map_err(|e| PipelineCreationError::PipelineCreation(e))?
+                    .map_err(|e| PipelineCreationError::PipelineCreation(e, "Standard"))?
             }
         };
 
@@ -979,7 +979,7 @@ impl<I: Instance> Renderer<I> {
             unsafe {
                 device
                     .create_graphics_pipeline(&desc, None)
-                    .map_err(|e| PipelineCreationError::PipelineCreation(e))?
+                    .map_err(|e| PipelineCreationError::PipelineCreation(e, "Imgui"))?
             }
         };
 

@@ -24,6 +24,7 @@ imgui-winit-support = "0.1.0"
 image = "0.22.1"
 memoffset = "0.5.1"
 rodio = "0.9.0"
+anymap = "0.12.1"
 
 [dependencies.gfx-backend-vulkan]
 version = "0.3"

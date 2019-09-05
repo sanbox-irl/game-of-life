@@ -102,7 +102,7 @@ pub enum PipelineCreationError {
     DescriptorSetLayout(#[cause] OutOfMemory),
     DescriptorPool(#[cause] OutOfMemory),
     PipelineLayout(#[cause] OutOfMemory),
-    PipelineCreation(#[cause] gfx_hal::pso::CreationError),
+    PipelineCreation(#[cause] gfx_hal::pso::CreationError, &'static str),
 }
 
 impl std::fmt::Display for PipelineCreationError {
@@ -126,7 +126,9 @@ impl std::fmt::Display for PipelineCreationError {
             PipelineCreationError::PipelineLayout(e) => {
                 format!("PipelineLayout could not be allocated! => {}", e)
             }
-            PipelineCreationError::PipelineCreation(e) => format!("Pipeline could not be created! => {}", e),
+            PipelineCreationError::PipelineCreation(e, k) => {
+                format!("Pipeline {} could not be created! => {}", k, e)
+            }
         };
         write!(f, "{}", write)
     }

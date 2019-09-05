@@ -9,23 +9,14 @@ extern crate failure;
 #[macro_use]
 extern crate imgui;
 
-use rodio::Sink;
-
 mod ecs;
 mod game;
 mod rendering;
 mod utilities;
+mod resources;
 
 fn main() {
     env_logger::init();
-
-    /*
-    let device = rodio::default_output_device().unwrap();
-    let sink = Sink::new(&device);=
-    let source = rodio::source::SineWave::new(440);
-    sink.append(source);
-    sink.set_volume(0.2);
-    */
 
     let mut game = match game::Game::new() {
         Ok(game) => game,
