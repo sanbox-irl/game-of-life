@@ -1,9 +1,13 @@
-use super::{Color, Entity, MouseButton, State, Time, UserInput};
+use super::{Color, Entity, MouseButton, Music, SoundPlayer, Sounds, SoundsVFX, State, Time, UserInput};
+use anymap::AnyMap;
+use rodio::Decoder;
+use std::sync::Arc;
+use std::{fmt::Debug, io::Cursor};
 use winit::VirtualKeyCode as Key;
 
 type UsizeTuple = (usize, usize);
+type SoundFile = &'static [u8];
 
-#[derive(Debug)]
 pub struct Gameplay {
     pub auto_increment: bool,
     pub coords_pressed: Vec<UsizeTuple>,
@@ -16,10 +20,12 @@ pub struct Gameplay {
     pub playing: bool,
     pub show_ui: bool,
     pub game_colors: GameColors,
+    pub game_sounds: GameSounds,
+    sound_player: SoundPlayer,
 }
 
-impl Default for Gameplay {
-    fn default() -> Self {
+impl Gameplay {
+    pub fn new(resources: &AnyMap) -> Self {
         Gameplay {
             auto_increment: false,
             coords_pressed: Vec::new(),
@@ -32,15 +38,28 @@ impl Default for Gameplay {
             show_play_control: true,
             show_settings_control: false,
             game_colors: GameColors::default(),
+            game_sounds: GameSounds::new(resources),
+            sound_player: SoundPlayer::new(),
         }
     }
-}
 
-impl Gameplay {
     pub fn select(&mut self, coord_pos: UsizeTuple, entities: &mut [Vec<Entity>]) {
         if self.coords_pressed.contains(&coord_pos) == false {
             let entity = &mut entities[coord_pos.0][coord_pos.1];
-            entity.flip_state();
+            let new_state = entity.flip_state();
+            match new_state {
+                State::Alive => {
+                    self.sound_player
+                        .play_sound(Cursor::new(self.game_sounds.alive_sound));
+                }
+
+                State::Dead => {
+                    self.sound_player
+                        .play_sound(Cursor::new(self.game_sounds.dead_sound));
+                }
+
+                _ => {}
+            }
             self.coords_pressed.push(coord_pos);
         }
     }
@@ -54,6 +73,8 @@ impl Gameplay {
         if user_input.kb_input.is_pressed(Key::Return) {
             Gameplay::set_rules(entities);
             do_not_update_again = true;
+            self.sound_player
+                .play_sound(Cursor::new(self.game_sounds.tick_sound));
         }
 
         if user_input.kb_input.is_pressed(Key::F1) {
@@ -240,5 +261,37 @@ impl Default for GameColors {
             grid_line_width: 0.025,
             grid_line_color: Color::new(0.2, 0.5, 0.1),
         }
+    }
+}
+
+pub struct GameSounds {
+    alive_sound: SoundFile,
+    dead_sound: SoundFile,
+    tick_sound: SoundFile,
+    music: SoundFile,
+}
+
+impl GameSounds {
+    pub fn new(resources: &AnyMap) -> Self {
+        let soundsfx: &SoundsVFX = resources.get().unwrap();
+
+        let alive_sound = soundsfx.get_sound(Sounds::MakeCellAlive);
+        let dead_sound = soundsfx.get_sound(Sounds::MakeCellDead);
+        let tick_sound = soundsfx.get_sound(Sounds::Tick);
+
+        let music = soundsfx.get_music(Music::Main);
+
+        GameSounds {
+            alive_sound,
+            dead_sound,
+            tick_sound,
+            music,
+        }
+    }
+}
+
+impl<'a> Debug for GameSounds {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(fmt, "Sounds")
     }
 }

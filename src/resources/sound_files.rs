@@ -1,32 +1,56 @@
-use rodio::{Sink, Source};
-use std::fs::File;
-use std::io::BufReader;
+use std::collections::HashMap;
+use std::io::Cursor;
+use std::sync::Arc;
 
-#[derive(Debug)]
+pub type SoundType = Arc<&'static [u8]>;
+
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Sounds {
-    MakeCellAlive = 0,
+    MakeCellAlive,
     MakeCellDead,
     Tick,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Music {
     Main,
 }
 
 pub struct SoundsVFX {
-    sounds: Vec<&'static [u8]>,
-    music: Vec<&'static [u8]>,
+    sounds: HashMap<Sounds, &'static [u8]>,
+    music: HashMap<Music, &'static [u8]>,
+}
+
+macro_rules! get_sound {
+    ($name:expr) => {
+        &include_bytes!($name)[..]
+    };
 }
 
 impl SoundsVFX {
-    pub fn new(&self) -> Self {
-        let file = File::open("test.ogg").unwrap();
-        let source = rodio::Decoder::new(BufReader::new(file)).unwrap().buffered();
-        let res = source.convert_samples();
+    pub fn new() -> Self {
+        let alive = get_sound!("../../resources/sounds/make_alive.wav");
+        let dead = get_sound!("../../resources/sounds/make_dead.wav");
+        let tick = get_sound!("../../resources/sounds/tick.wav");
+        let music = get_sound!("../../resources/music/main.wav");
 
-        let device = rodio::default_output_device().unwrap();
-        let sink = Sink::new(&device);
-        sink.append(source);
+        SoundsVFX {
+            sounds: hashmap![
+                Sounds::MakeCellAlive => alive,
+                Sounds::MakeCellDead => dead,
+                Sounds::Tick => tick
+            ],
+            music: hashmap![
+                Music::Main => music
+            ],
+        }
+    }
+
+    pub fn get_sound(&self, sound: Sounds) -> &'static [u8] {
+        self.sounds.get(&sound).unwrap()
+    }
+
+    pub fn get_music(&self, music: Music) -> &'static [u8] {
+        self.music.get(&music).unwrap()
     }
 }

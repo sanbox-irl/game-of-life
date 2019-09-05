@@ -1,11 +1,13 @@
-pub use super::{Vec2, Entity, Vec2Int, State, Color, Time};
+pub use super::*;
 
 mod dear_imgui;
 mod window;
 mod user_input;
 mod camera;
 mod gameplay;
+mod sound;
 
+pub use sound::*;
 pub use window::*;
 pub use user_input::*;
 pub use camera::*;

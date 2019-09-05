@@ -2,6 +2,7 @@ use super::ecs::{Camera, Entity, Gameplay, Imgui, MouseButton, State, UiHandler,
 use super::rendering::{
     DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands, TypedRenderer,
 };
+use super::resources::{Music, Sounds, SoundsVFX};
 use super::utilities::{Time, Vec2, Vec2Int};
 use anymap::AnyMap;
 use failure::Error;
@@ -10,6 +11,7 @@ const DEFAULT_SIZE: Vec2 = Vec2 { x: 1280.0, y: 720.0 };
 const ARRAY_SIZE: Vec2Int = Vec2Int { x: 21, y: 21 };
 
 pub struct Game {
+    pub resources: AnyMap,
     window: Window,
     user_input: UserInput,
     renderer: Option<TypedRenderer>,
@@ -17,11 +19,14 @@ pub struct Game {
     gameplay: Gameplay,
     entities: Vec<Vec<Entity>>,
     time: Time,
-    resources: AnyMap,
 }
 
 impl Game {
     pub fn new() -> Result<Self, Error> {
+        // Resources
+        let mut resources = AnyMap::new();
+        resources.insert(SoundsVFX::new());
+
         let window = Window::new(DEFAULT_SIZE)?;
         let user_input = UserInput::new();
 
@@ -38,22 +43,7 @@ impl Game {
             entities.push(this_vec);
         }
 
-        // Basic test:
-        entities[0][0].state = State::Dead;
-        entities[4][6].state = State::Alive;
-        entities[5][6].state = State::Alive;
-        entities[6][6].state = State::Alive;
-
-        entities[4][5].state = State::Alive;
-        entities[6][5].state = State::Alive;
-
-        entities[4][4].state = State::Alive;
-        entities[5][4].state = State::Alive;
-        entities[6][4].state = State::Alive;
-
-        // Resources
-        let resources = AnyMap::new();
-        resources.insert(12);
+        let gameplay = Gameplay::new(&resources);
 
         Ok(Game {
             window,
@@ -61,14 +51,13 @@ impl Game {
             renderer: Some(renderer),
             entities,
             camera,
-            gameplay: Gameplay::default(),
+            gameplay,
             time: Time::new(),
             resources,
         })
     }
 
     pub fn main_loop(&mut self) -> Result<(), Error> {
-        // Stacks:
         let mut dear_imgui = Imgui::new(&self.window);
         if let Some(renderer) = &mut self.renderer {
             renderer.initialize_imgui(&mut dear_imgui.imgui)?;

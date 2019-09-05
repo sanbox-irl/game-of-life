@@ -14,13 +14,14 @@ impl Entity {
         }
     }
 
-    pub fn flip_state(&mut self) {
+    pub fn flip_state(&mut self) -> State {
         let new_state = match self.state {
             State::Unborn | State::Dead => State::Alive,
             State::Alive => State::Dead,
         };
 
         self.state = new_state;
+        new_state
     }
 }
 
