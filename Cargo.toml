@@ -23,8 +23,7 @@ imgui = "0.1.0"
 imgui-winit-support = "0.1.0"
 image = "0.22.1"
 memoffset = "0.5.1"
-scarlet = "1.0.2"
-serde_json = "1.0.40"
+rodio = "0.9.0"
 
 [dependencies.gfx-backend-vulkan]
 version = "0.3"
