@@ -29,19 +29,27 @@ impl Color {
     pub fn into_linear(number: f32) -> f32 {
         number.powf(2.2)
     }
+
+    pub fn into_linear_multiple(numbers: &[f32; 3]) -> [f32; 3] {
+        let mut ret = [0.0; 3];
+        for this_number in 0..3 {
+            ret[this_number] = Self::into_linear(numbers[this_number]);
+        }
+        ret
+    }
 }
 
 impl From<[f32; 3]> for Color {
     fn from(w: [f32; 3]) -> Color {
         Color {
             r: w[0],
-            b: w[1],
-            g: w[2],
+            g: w[1],
+            b: w[2],
         }
     }
 }
 impl From<Color> for [f32; 3] {
-    fn from(w: Color) -> [f32; 3] {
-        [w.r, w.b, w.g]
+    fn from(o: Color) -> [f32; 3] {
+        [o.r, o.g, o.b]
     }
 }

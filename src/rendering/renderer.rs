@@ -40,7 +40,7 @@ use super::{
 
 const VERTEX_PUSH_CONSTANTS_SIZE: usize = 6;
 const FRAG_PUSH_CONSTANTS_START: u32 = 8;
-const FRAG_PUSH_CONSTANTS_SIZE: usize = 4;
+const FRAG_PUSH_CONSTANTS_SIZE: usize = 12;
 
 const QUAD_DATA: usize = 0;
 const IMGUI_DATA: usize = 1;
@@ -385,7 +385,7 @@ impl<I: Instance> Renderer<I> {
         })
     }
 
-    pub fn render<'a>(
+    pub fn draw<'a>(
         &mut self,
         renderer_commands: RendererCommands<'a>,
     ) -> Result<Option<Suboptimal>, DrawingError> {
@@ -418,11 +418,12 @@ impl<I: Instance> Renderer<I> {
         // RECORD COMMANDS
         unsafe {
             let buffer = &mut self.command_buffers[i_usize];
-            const TRIANGLE_CLEAR: [ClearValue; 1] = [ClearValue::Color(ClearColor::Sfloat([
-                139.0 / 255.0,
-                110.0 / 255.0,
-                101.0 / 255.0,
-                1.0,
+            let color: [f32; 3] = match &renderer_commands.game_world_draw_commands {
+                Some(commands) => commands.game_colors.bg.into(),
+                None => [139.0 / 255.0, 110.0 / 255.0, 101.0 / 255.0],
+            };
+            let triangle_clear: [ClearValue; 1] = [ClearValue::Color(ClearColor::Sfloat([
+                color[0], color[1], color[2], 1.0,
             ]))];
             buffer.begin(false);
             {
@@ -430,7 +431,7 @@ impl<I: Instance> Renderer<I> {
                     &self.render_pass,
                     &self.framebuffers[i_usize],
                     self.viewport,
-                    TRIANGLE_CLEAR.iter(),
+                    triangle_clear.iter(),
                 );
 
                 if let Some(game_world_commands) = renderer_commands.game_world_draw_commands {
@@ -1015,6 +1016,11 @@ impl<I: Instance> Renderer<I> {
 
         let mut frag_push_constants: [u32; FRAG_PUSH_CONSTANTS_SIZE] = [0; FRAG_PUSH_CONSTANTS_SIZE];
         frag_push_constants[3] = game_world.game_colors.grid_lines.into();
+        frag_push_constants[4] = game_world.game_colors.grid_line_width.to_bits();
+        let grid_colors = game_world.game_colors.grid_line_color.into_raw_u32();
+        frag_push_constants[8] = grid_colors[0];
+        frag_push_constants[9] = grid_colors[1];
+        frag_push_constants[10] = grid_colors[2];
 
         for row in game_world.entities {
             for entity in row {

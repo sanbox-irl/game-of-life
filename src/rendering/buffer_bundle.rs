@@ -106,7 +106,7 @@ impl<B: Backend> VertexIndexPairBufferBundle<B> {
         adapter: &Adapter<B>,
     ) -> Result<bool, failure::Error> {
         if self.num_vert < new_num_vert || self.num_idx < new_num_idx {
-            println!(
+            trace!(
                 "Updating our imgui-buffer! Old size was [{}, {}], new size is [{}, {}]",
                 self.num_vert, self.num_idx, new_num_vert, new_num_idx
             );

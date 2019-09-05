@@ -1,4 +1,4 @@
-pub use super::utilities::{Vec2, Time, Vec2Int, Color};
+pub use super::utilities::{Vec2, Time, Color, Vec2Int};
 
 mod systems;
 mod entities;

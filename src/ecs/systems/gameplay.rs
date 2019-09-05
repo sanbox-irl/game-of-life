@@ -10,12 +10,30 @@ pub struct Gameplay {
     pub show_debug: bool,
     pub show_instructions: bool,
     pub show_play_control: bool,
-    pub show_color_control: bool,
+    pub show_settings_control: bool,
     pub increment_rate: f32,
     pub current_time: f32,
     pub playing: bool,
     pub show_ui: bool,
     pub game_colors: GameColors,
+}
+
+impl Default for Gameplay {
+    fn default() -> Self {
+        Gameplay {
+            auto_increment: false,
+            coords_pressed: Vec::new(),
+            increment_rate: 1.0,
+            show_debug: true,
+            current_time: 0.0,
+            show_instructions: true,
+            show_ui: true,
+            playing: true,
+            show_play_control: true,
+            show_settings_control: false,
+            game_colors: GameColors::default(),
+        }
+    }
 }
 
 impl Gameplay {
@@ -173,24 +191,6 @@ impl Gameplay {
     }
 }
 
-impl Default for Gameplay {
-    fn default() -> Self {
-        Gameplay {
-            auto_increment: false,
-            coords_pressed: Vec::new(),
-            increment_rate: 0.0,
-            show_debug: true,
-            current_time: 0.0,
-            show_instructions: true,
-            show_ui: true,
-            playing: false,
-            show_play_control: true,
-            show_color_control: false,
-            game_colors: GameColors::default(),
-        }
-    }
-}
-
 #[derive(PartialEq)]
 enum Move {
     Positive,
@@ -215,6 +215,8 @@ pub struct GameColors {
     pub unborn: Color,
     pub bg: Color,
     pub grid_lines: bool,
+    pub grid_line_width: f32,
+    pub grid_line_color: Color,
 }
 
 impl GameColors {
@@ -235,6 +237,8 @@ impl Default for GameColors {
             unborn: Color::with_u8(139, 110, 101),
             bg: Color::with_u8(139, 110, 101),
             grid_lines: true,
+            grid_line_width: 0.025,
+            grid_line_color: Color::new(0.2, 0.5, 0.1),
         }
     }
 }

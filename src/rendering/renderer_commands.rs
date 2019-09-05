@@ -1,4 +1,4 @@
-use super::{Entity, Vec2, GameColors};
+use super::{Entity, GameColors, Vec2};
 
 pub struct RendererCommands<'a> {
     pub game_world_draw_commands: Option<GameWorldDrawCommands<'a>>,

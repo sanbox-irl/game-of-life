@@ -133,7 +133,7 @@ impl Game {
                     }),
                 };
 
-                renderer.render(instructions)
+                renderer.draw(instructions)
             };
             match result {
                 Ok(sub_optimal) => {

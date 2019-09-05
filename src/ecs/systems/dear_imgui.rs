@@ -16,9 +16,18 @@ impl Imgui {
         let mut imgui = Context::create();
         imgui.set_ini_filename(None);
 
+        let style = imgui.style_mut();
+        for col in 0..style.colors.len() {
+            let color: [f32; 3] = Color::into_linear_multiple(&[
+                style.colors[col][0],
+                style.colors[col][1],
+                style.colors[col][2],
+            ]);
+            style.colors[col] = [color[0], color[1], color[2], style.colors[col][3]]
+        }
+
         let mut platform = WinitPlatform::init(&mut imgui);
         platform.attach_window(imgui.io_mut(), &window.window, HiDpiMode::Default);
-
         imgui.fonts().add_font(&[FontSource::DefaultFontData {
             config: Some(FontConfig {
                 size_pixels: (13.0 * platform.hidpi_factor()) as f32,
@@ -94,24 +103,55 @@ impl Imgui {
             return;
         }
 
-        if gameplay.show_color_control {
+        if gameplay.show_settings_control {
             Window::new(ui, im_str!("Color"))
-                .size([300.0, 100.0], Condition::FirstUseEver)
+                .size([300.0, 155.0], Condition::FirstUseEver)
+                .position(
+                    [
+                        ui_handler.size.x - ((ui_handler.size.x - PWS) / 2.0) - 300.0,
+                        (ui_handler.size.y - PWH * 1.5) - 255.0,
+                    ],
+                    Condition::Always,
+                )
+                .flags(
+                    ImGuiWindowFlags::NoResize
+                        | ImGuiWindowFlags::NoScrollbar
+                        | ImGuiWindowFlags::NoTitleBar
+                        | ImGuiWindowFlags::NoMove,
+                )
                 .build(|| {
                     fn make_color<'p>(label: &'p ImStr, color: &mut Color, ui: &mut Ui<'_>) {
                         let mut bg_color: [f32; 3] = color.clone().into();
                         let do_it = ui.color_edit(label, &mut bg_color).build();
-                        // let do_it = ui.slider_float3(label, &mut bg_color, 0.0, 1.0).build();
                         if do_it {
                             *color = bg_color.into();
                         }
                     }
+                    // SOUND
 
+                    // COLORS
                     make_color(im_str!("Alive"), &mut gameplay.game_colors.alive, ui);
                     make_color(im_str!("Dead"), &mut gameplay.game_colors.dead, ui);
                     make_color(im_str!("Unborn"), &mut gameplay.game_colors.unborn, ui);
                     make_color(im_str!("Background"), &mut gameplay.game_colors.bg, ui);
+
+                    ui.separator();
+
+                    // GRID LINES
                     ui.checkbox(im_str!("Grid Lines"), &mut gameplay.game_colors.grid_lines);
+                    {
+                        let str = im_str!("Grid Thickness");
+                        let _width = ui.push_item_width(-14.0 - ui.calc_text_size(str, false, -1.0)[0]);
+                        ui.same_line_with_spacing(ui.get_item_rect_size()[0], 31.0);
+                        ui.slider_float(
+                            im_str!("Grid Thickness"),
+                            &mut gameplay.game_colors.grid_line_width,
+                            0.0,
+                            0.5,
+                        )
+                        .build();
+                    }
+                    make_color(im_str!("Grid"), &mut gameplay.game_colors.grid_line_color, ui);
                 });
         }
 
@@ -137,26 +177,24 @@ impl Imgui {
                     let do_auto_increment =
                         ui.radio_button_bool(im_str!("Automatically Increment"), gameplay.auto_increment);
 
-                    if gameplay.auto_increment {
-                        let a = ui.push_item_width(80.0);
-                        ui.slider_float(im_str!("Per Second"), &mut gameplay.increment_rate, 0.0, 50.0)
-                            .build();
-                        drop(a);
+                    let a = ui.push_item_width(80.0);
+                    ui.slider_float(im_str!("Per Second"), &mut gameplay.increment_rate, 0.0, 50.0)
+                        .build();
+                    drop(a);
+                    ui.same_line(175.0);
 
-                        ui.same_line(175.0);
-
-                        let play_pause = ui.button(
-                            if gameplay.playing {
-                                im_str!("Pause (space)")
-                            } else {
-                                im_str!("Play (space)")
-                            },
-                            [100.0, 20.0],
-                        );
-                        if play_pause {
-                            gameplay.playing = !gameplay.playing;
-                        }
+                    let play_pause = ui.button(
+                        if gameplay.playing {
+                            im_str!("Pause (space)")
+                        } else {
+                            im_str!("Play (space)")
+                        },
+                        [100.0, 20.0],
+                    );
+                    if play_pause {
+                        gameplay.playing = !gameplay.playing;
                     }
+
                     let do_manual_increment =
                         ui.radio_button_bool(im_str!("Manual Increment"), !gameplay.auto_increment);
 
@@ -249,7 +287,7 @@ Press F1 to hide all UI."
                 ui.child_frame(im_str!("Options"), [BUTTON, 50.0]).build(|| {
                     let _style = ui.push_style_var(StyleVar::ItemSpacing([0.0, 10.0]));
                     ui.checkbox(im_str!("Play Panel"), &mut gameplay.show_play_control);
-                    ui.checkbox(im_str!("Color Panel"), &mut gameplay.show_color_control);
+                    ui.checkbox(im_str!("Settings"), &mut gameplay.show_settings_control);
                 });
             });
     }
@@ -323,7 +361,7 @@ pub struct UiHandler<'a> {
     pub ui: Ui<'a>,
     pub platform: &'a WinitPlatform,
     pub size: Vec2,
-    pub map: HashMap<&'static str, Vec2>,
+    pub map: HashMap<&'static str, f32>,
 }
 
 impl<'a> UiHandler<'a> {

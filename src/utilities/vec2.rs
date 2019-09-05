@@ -1,4 +1,3 @@
-use nalgebra_glm as glm;
 use std::fmt::{self, Display};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -26,16 +25,6 @@ impl Vec2 {
     pub fn normalized(&self) -> Self {
         let m = self.magnitude();
         self.clone() / m
-    }
-
-    #[allow(dead_code)]
-    pub fn into_glm_tmat4(self, z: f32) -> glm::TMat4<f32> {
-        glm::translate(&glm::identity(), &self.into_glm_vec3(z))
-    }
-
-    #[allow(dead_code)]
-    pub fn into_glm_vec3(self, z: f32) -> glm::TVec3<f32> {
-        glm::make_vec3(&[self.x, self.y, z])
     }
 
     #[allow(dead_code)]
