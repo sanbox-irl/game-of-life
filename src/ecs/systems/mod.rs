@@ -1,15 +1,18 @@
 pub use super::*;
 
-mod dear_imgui;
-mod window;
-mod user_input;
 mod camera;
+mod dear_imgui;
 mod gameplay;
+mod prefabs;
+pub mod simple_serialization;
 mod sound;
+mod user_input;
+mod window;
 
-pub use sound::*;
-pub use window::*;
-pub use user_input::*;
 pub use camera::*;
 pub use dear_imgui::*;
 pub use gameplay::*;
+pub use prefabs::Prefab;
+pub use sound::*;
+pub use user_input::*;
+pub use window::*;

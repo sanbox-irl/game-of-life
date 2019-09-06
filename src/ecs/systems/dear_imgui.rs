@@ -1,4 +1,4 @@
-use super::{Color, Gameplay, State, Time, UserInput, Vec2, Window as WinitWindow};
+use super::{Color, Gameplay, Prefab, Time, UserInput, Vec2, Window as WinitWindow};
 use imgui::{Condition, Context, FontConfig, FontSource, ImGuiWindowFlags, ImStr, StyleVar, Ui, Window};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use std::collections::HashMap;
@@ -258,12 +258,26 @@ Press F1 to hide all UI."
                 ui.spacing();
                 ui.spacing();
 
-                ui.same_line(horizontal);
-                let glider = ui.button(im_str!("Glider"), [BUTTON, 50.0]);
-                if glider {
-                    gameplay.saved_prefab = Some(vec![vec![State::Alive], vec![State::Alive]])
+                fn make_prefab_button(
+                    prefab: Prefab,
+                    ui: &mut Ui<'_>,
+                    horizontal: &mut f32,
+                    gameplay: &mut Gameplay,
+                ) {
+                    ui.same_line(*horizontal);
+                    let glider = ui.button(&im_str!("{}", prefab.get_static_name()), [BUTTON, 50.0]);
+                    if glider {
+                        gameplay.saved_prefab = Some(prefab)
+                    }
+                    *horizontal += BUTTON;
                 }
-                horizontal += BUTTON;
+
+                make_prefab_button(Prefab::Glider, ui, &mut horizontal, gameplay);
+                make_prefab_button(Prefab::SmallExploder, ui, &mut horizontal, gameplay);
+                make_prefab_button(Prefab::Exploder, ui, &mut horizontal, gameplay);
+                make_prefab_button(Prefab::Spaceship, ui, &mut horizontal, gameplay);
+                make_prefab_button(Prefab::Tumbler, ui, &mut horizontal, gameplay);
+                make_prefab_button(Prefab::GliderGun, ui, &mut horizontal, gameplay);
 
                 ui.same_line(horizontal);
                 ui.button(im_str!("Small Exploder"), [BUTTON, 50.0]);

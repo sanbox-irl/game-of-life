@@ -1,4 +1,7 @@
-use super::{Color, Entity, MouseButton, Music, SoundPlayer, Sounds, SoundsVFX, State, Time, UserInput};
+use super::{
+    simple_serialization, Color, Entity, MouseButton, Music, Prefab, SoundPlayer, Sounds, SoundsVFX, State,
+    Time, UserInput,
+};
 use anymap::AnyMap;
 use std::{fmt::Debug, io::Cursor};
 use winit::VirtualKeyCode as Key;
@@ -19,13 +22,14 @@ pub struct Gameplay {
     pub show_ui: bool,
     pub game_colors: GameColors,
     pub game_sounds: GameSounds,
-    pub saved_prefab: Option<Vec<Vec<State>>>,
+    pub saved_prefab: Option<Prefab>,
+    prefabs: Prefabs,
     sound_player: SoundPlayer,
 }
 
 impl Gameplay {
-    pub fn new(resources: &AnyMap) -> Self {
-        Gameplay {
+    pub fn new(resources: &AnyMap) -> Result<Self, Error> {
+        Ok(Gameplay {
             auto_increment: false,
             coords_pressed: Vec::new(),
             increment_rate: 1.0,
@@ -40,49 +44,59 @@ impl Gameplay {
             game_sounds: GameSounds::new(resources),
             sound_player: SoundPlayer::new(),
             saved_prefab: None,
-        }
+            prefabs: Prefabs::new()?,
+        })
     }
 
     pub fn select(&mut self, click_pos: UsizeTuple, entities: &mut [Vec<Entity>]) {
         match &self.saved_prefab {
             Some(prefab) => {
-                for this_x in click_pos.0..click_pos.0 + prefab.len() {
-                    let command_x = this_x - click_pos.0;
+                if let Some(prefab) = self.prefabs.prefabs.get(&prefab) {
+                    for this_x in click_pos.0..click_pos.0 + prefab.len() {
+                        let command_x = this_x - click_pos.0;
 
-                    for this_y in click_pos.1..click_pos.1 + prefab[command_x].len() {
-                        let command_y = this_y - click_pos.1;
+                        for this_y in click_pos.1..click_pos.1 + prefab[command_x].len() {
+                            let command_y = this_y - click_pos.1;
 
-                        let entity = &mut entities[this_x][this_y];
-                        entity.state = prefab[command_x][command_y];
-                    }
-                }
-
-                self.saved_prefab = None;
-                self.coords_pressed.push(click_pos);
-                self.sound_player
-                    .play_sound(Cursor::new(self.game_sounds.alive_sound));
-            }
-
-            None => {
-                if self.coords_pressed.contains(&click_pos) == false {
-                    let entity = &mut entities[click_pos.0][click_pos.1];
-                    let new_state = entity.flip_state();
-                    match new_state {
-                        State::Alive => {
-                            self.sound_player
-                                .play_sound(Cursor::new(self.game_sounds.alive_sound));
+                            let entity = &mut entities[this_x][this_y];
+                            let new_state = prefab[command_x][command_y];
+                            if !(entity.state == State::Unborn && new_state == State::Dead) {
+                                entity.state = new_state;
+                            }
                         }
-
-                        State::Dead => {
-                            self.sound_player
-                                .play_sound(Cursor::new(self.game_sounds.dead_sound));
-                        }
-
-                        _ => {}
                     }
+
+                    self.saved_prefab = None;
                     self.coords_pressed.push(click_pos);
+                    self.sound_player
+                        .play_sound(Cursor::new(self.game_sounds.alive_sound));
+
+                    return;
+                } else {
+                    println!("Couldn't find prefab by name of {:?}", prefab);
                 }
             }
+
+            None => {}
+        }
+
+        if self.coords_pressed.contains(&click_pos) == false {
+            let entity = &mut entities[click_pos.0][click_pos.1];
+            let new_state = entity.flip_state();
+            match new_state {
+                State::Alive => {
+                    self.sound_player
+                        .play_sound(Cursor::new(self.game_sounds.alive_sound));
+                }
+
+                State::Dead => {
+                    self.sound_player
+                        .play_sound(Cursor::new(self.game_sounds.dead_sound));
+                }
+
+                _ => {}
+            }
+            self.coords_pressed.push(click_pos);
         }
     }
 
@@ -315,5 +329,43 @@ impl GameSounds {
 impl<'a> Debug for GameSounds {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         write!(fmt, "Sounds")
+    }
+}
+
+use failure::Error;
+use std::collections::HashMap;
+
+#[derive(Debug)]
+pub struct Prefabs {
+    prefabs: HashMap<Prefab, Vec<Vec<State>>>,
+}
+
+impl Prefabs {
+    pub fn new() -> Result<Prefabs, Error> {
+        let mut prefabs: HashMap<Prefab, Vec<Vec<State>>> = HashMap::new();
+
+        prefabs.insert(
+            Prefab::Glider,
+            simple_serialization::load("resources/prefabs/glider.json")?,
+        );
+        prefabs.insert(
+            Prefab::SmallExploder,
+            simple_serialization::load("resources/prefabs/small_exploder.json")?,
+        );
+        prefabs.insert(
+            Prefab::Exploder,
+            simple_serialization::load("resources/prefabs/exploder.json")?,
+        );
+        prefabs.insert(
+            Prefab::Spaceship,
+            simple_serialization::load("resources/prefabs/lw_spaceship.json")?,
+        );
+        prefabs.insert(
+            Prefab::Tumbler,
+            simple_serialization::load("resources/prefabs/tumbler.json")?,
+        );
+        // prefabs.insert(Prefab::GliderGun, simple_serialization::load("glider_gun.json")?);
+
+        Ok(Prefabs { prefabs })
     }
 }

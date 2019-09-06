@@ -8,7 +8,6 @@ extern crate memoffset;
 extern crate failure;
 #[macro_use]
 extern crate imgui;
-
 #[macro_use]
 extern crate maplit;
 
@@ -29,6 +28,8 @@ fn main() {
             for this_cause in causes {
                 error!("{}", this_cause);
             }
+            error!("Backtrace (if enabled): {}", e.backtrace());
+
             return;
         }
     };

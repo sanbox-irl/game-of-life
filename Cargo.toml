@@ -5,7 +5,7 @@ authors = ["jjspira"]
 edition = "2018"
 
 [features]
-default = ["metal"]
+default = ["vulkan"]
 metal = ["gfx-backend-metal"]
 dx12 = ["gfx-backend-dx12"]
 vulkan = ["gfx-backend-vulkan"]
@@ -26,6 +26,8 @@ memoffset = "0.5.1"
 rodio = "0.9.0"
 anymap = "0.12.1"
 maplit = "1.0.2"
+serde = { version = "1.0.99", features = ["derive"] }
+serde_json = "1.0.40"
 
 [dependencies.gfx-backend-vulkan]
 version = "0.3"

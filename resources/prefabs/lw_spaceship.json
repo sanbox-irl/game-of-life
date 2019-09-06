@@ -1,0 +1,6 @@
+[
+  ["Dead", "Alive", "Alive", "Alive", "Alive"],
+  ["Alive", "Dead", "Dead", "Dead", "Alive"],
+  ["Dead", "Dead", "Dead", "Dead", "Alive"],
+  ["Alive", "Dead", "Dead", "Alive", "Dead"]
+]

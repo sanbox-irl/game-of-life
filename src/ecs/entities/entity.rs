@@ -1,4 +1,5 @@
-use super::{Vec2};
+use super::Vec2;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
 pub struct Entity {
@@ -25,7 +26,7 @@ impl Entity {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum State {
     Unborn,
     Alive,

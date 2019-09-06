@@ -1,4 +1,6 @@
-use super::ecs::{Camera, Entity, Gameplay, Imgui, MouseButton, UiHandler, UserInput, Window};
+use super::ecs::{
+    simple_serialization, Camera, Entity, Gameplay, Imgui, MouseButton, State, UiHandler, UserInput, Window,
+};
 use super::rendering::{
     DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands, TypedRenderer,
 };
@@ -43,7 +45,7 @@ impl Game {
             entities.push(this_vec);
         }
 
-        let gameplay = Gameplay::new(&resources);
+        let gameplay = Gameplay::new(&resources)?;
 
         Ok(Game {
             window,
