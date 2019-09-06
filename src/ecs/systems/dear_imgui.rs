@@ -1,4 +1,4 @@
-use super::{Color, Gameplay, Time, UserInput, Vec2, Window as WinitWindow};
+use super::{Color, Gameplay, State, Time, UserInput, Vec2, Window as WinitWindow};
 use imgui::{Condition, Context, FontConfig, FontSource, ImGuiWindowFlags, ImStr, StyleVar, Ui, Window};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use std::collections::HashMap;
@@ -259,7 +259,10 @@ Press F1 to hide all UI."
                 ui.spacing();
 
                 ui.same_line(horizontal);
-                ui.button(im_str!("Glider"), [BUTTON, 50.0]);
+                let glider = ui.button(im_str!("Glider"), [BUTTON, 50.0]);
+                if glider {
+                    gameplay.saved_prefab = Some(vec![vec![State::Alive], vec![State::Alive]])
+                }
                 horizontal += BUTTON;
 
                 ui.same_line(horizontal);

@@ -1,8 +1,8 @@
-use super::ecs::{Camera, Entity, Gameplay, Imgui, MouseButton, State, UiHandler, UserInput, Window};
+use super::ecs::{Camera, Entity, Gameplay, Imgui, MouseButton, UiHandler, UserInput, Window};
 use super::rendering::{
     DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands, TypedRenderer,
 };
-use super::resources::{Music, Sounds, SoundsVFX};
+use super::resources::SoundsVFX;
 use super::utilities::{Time, Vec2, Vec2Int};
 use anymap::AnyMap;
 use failure::Error;

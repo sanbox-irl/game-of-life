@@ -1,7 +1,5 @@
 use super::{Color, Entity, MouseButton, Music, SoundPlayer, Sounds, SoundsVFX, State, Time, UserInput};
 use anymap::AnyMap;
-use rodio::Decoder;
-use std::sync::Arc;
 use std::{fmt::Debug, io::Cursor};
 use winit::VirtualKeyCode as Key;
 
@@ -21,6 +19,7 @@ pub struct Gameplay {
     pub show_ui: bool,
     pub game_colors: GameColors,
     pub game_sounds: GameSounds,
+    pub saved_prefab: Option<Vec<Vec<State>>>,
     sound_player: SoundPlayer,
 }
 
@@ -40,27 +39,50 @@ impl Gameplay {
             game_colors: GameColors::default(),
             game_sounds: GameSounds::new(resources),
             sound_player: SoundPlayer::new(),
+            saved_prefab: None,
         }
     }
 
-    pub fn select(&mut self, coord_pos: UsizeTuple, entities: &mut [Vec<Entity>]) {
-        if self.coords_pressed.contains(&coord_pos) == false {
-            let entity = &mut entities[coord_pos.0][coord_pos.1];
-            let new_state = entity.flip_state();
-            match new_state {
-                State::Alive => {
-                    self.sound_player
-                        .play_sound(Cursor::new(self.game_sounds.alive_sound));
+    pub fn select(&mut self, click_pos: UsizeTuple, entities: &mut [Vec<Entity>]) {
+        match &self.saved_prefab {
+            Some(prefab) => {
+                for this_x in click_pos.0..click_pos.0 + prefab.len() {
+                    let command_x = this_x - click_pos.0;
+
+                    for this_y in click_pos.1..click_pos.1 + prefab[command_x].len() {
+                        let command_y = this_y - click_pos.1;
+
+                        let entity = &mut entities[this_x][this_y];
+                        entity.state = prefab[command_x][command_y];
+                    }
                 }
 
-                State::Dead => {
-                    self.sound_player
-                        .play_sound(Cursor::new(self.game_sounds.dead_sound));
-                }
-
-                _ => {}
+                self.saved_prefab = None;
+                self.coords_pressed.push(click_pos);
+                self.sound_player
+                    .play_sound(Cursor::new(self.game_sounds.alive_sound));
             }
-            self.coords_pressed.push(coord_pos);
+
+            None => {
+                if self.coords_pressed.contains(&click_pos) == false {
+                    let entity = &mut entities[click_pos.0][click_pos.1];
+                    let new_state = entity.flip_state();
+                    match new_state {
+                        State::Alive => {
+                            self.sound_player
+                                .play_sound(Cursor::new(self.game_sounds.alive_sound));
+                        }
+
+                        State::Dead => {
+                            self.sound_player
+                                .play_sound(Cursor::new(self.game_sounds.dead_sound));
+                        }
+
+                        _ => {}
+                    }
+                    self.coords_pressed.push(click_pos);
+                }
+            }
         }
     }
 
