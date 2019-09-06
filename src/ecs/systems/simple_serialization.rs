@@ -3,7 +3,7 @@ use failure::Error;
 use serde_json;
 use std::fs;
 
-pub fn save(data: &Vec<Vec<State>>, location: &'static str) -> Result<(), Error> {
+pub fn save(data: &[Vec<State>], location: &'static str) -> Result<(), Error> {
     let j = serde_json::to_string(&flip_vector(data)).map_err(|e| SerializationError::Serialize(e))?;
     fs::write(location, j).map_err(|e| SerializationError::WriteToDisk(e))?;
 
@@ -12,12 +12,13 @@ pub fn save(data: &Vec<Vec<State>>, location: &'static str) -> Result<(), Error>
 
 pub fn load(location: &'static str) -> Result<Vec<Vec<State>>, Error> {
     let json = fs::read_to_string(location).map_err(|e| SerializationError::ReadFromDisk(e))?;
-    let prefab = serde_json::from_str(&json).map_err(|e| SerializationError::Deserialize(e))?;
+    let prefab: Vec<Vec<State>> =
+        serde_json::from_str(&json).map_err(|e| SerializationError::Deserialize(e))?;
 
     Ok(flip_vector(&prefab))
 }
 
-fn flip_vector(original: &Vec<Vec<State>>) -> Vec<Vec<State>> {
+fn flip_vector(original: &[Vec<State>]) -> Vec<Vec<State>> {
     // iterate over the Vec:
     let mut ret: Vec<Vec<State>> = vec![];
     for _ in 0..original[0].len() {
@@ -27,9 +28,6 @@ fn flip_vector(original: &Vec<Vec<State>>) -> Vec<Vec<State>> {
         }
         ret.push(this_one);
     }
-
-    println!("Original Dimensions are {},{}", original.len(), original[0].len());
-    println!("New Dimensions are {},{}", ret.len(), ret[0].len());
 
     for (x, this_row) in original.iter().enumerate() {
         for (y, this_entity) in this_row.iter().enumerate() {

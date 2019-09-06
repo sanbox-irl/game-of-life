@@ -279,25 +279,7 @@ Press F1 to hide all UI."
                 make_prefab_button(Prefab::Tumbler, ui, &mut horizontal, gameplay);
                 make_prefab_button(Prefab::GliderGun, ui, &mut horizontal, gameplay);
 
-                ui.same_line(horizontal);
-                ui.button(im_str!("Small Exploder"), [BUTTON, 50.0]);
-                horizontal += BUTTON;
-
-                ui.same_line(horizontal);
-                ui.button(im_str!("Exploder"), [BUTTON, 50.0]);
-                horizontal += BUTTON;
-
-                ui.same_line(horizontal);
-                ui.button(im_str!("Spaceship"), [BUTTON, 50.0]);
-                horizontal += BUTTON;
-
-                ui.same_line(horizontal);
-                ui.button(im_str!("Tumbler"), [BUTTON, 50.0]);
-                horizontal += BUTTON;
-
-                ui.same_line(horizontal);
-                ui.button(im_str!("Glider Gun"), [BUTTON, 50.0]);
-                horizontal += BUTTON + PWS / 125.0;
+                horizontal += PWS / 125.0;
 
                 ui.same_line(horizontal);
 

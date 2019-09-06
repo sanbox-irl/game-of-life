@@ -1,5 +1,5 @@
 use super::ecs::{
-    simple_serialization, Camera, Entity, Gameplay, Imgui, MouseButton, State, UiHandler, UserInput, Window,
+    Camera, Entity, Gameplay, Imgui, MouseButton, UiHandler, UserInput, Window,
 };
 use super::rendering::{
     DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands, TypedRenderer,
@@ -10,7 +10,7 @@ use anymap::AnyMap;
 use failure::Error;
 
 const DEFAULT_SIZE: Vec2 = Vec2 { x: 1280.0, y: 720.0 };
-const ARRAY_SIZE: Vec2Int = Vec2Int { x: 21, y: 21 };
+const ARRAY_SIZE: Vec2Int = Vec2Int { x: 51, y: 51 };
 
 pub struct Game {
     pub resources: AnyMap,

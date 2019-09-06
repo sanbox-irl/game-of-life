@@ -11,7 +11,6 @@ type SoundFile = &'static [u8];
 
 pub struct Gameplay {
     pub auto_increment: bool,
-    pub coords_pressed: Vec<UsizeTuple>,
     pub show_debug: bool,
     pub show_instructions: bool,
     pub show_play_control: bool,
@@ -23,6 +22,7 @@ pub struct Gameplay {
     pub game_colors: GameColors,
     pub game_sounds: GameSounds,
     pub saved_prefab: Option<Prefab>,
+    coords_pressed: Vec<UsizeTuple>,
     prefabs: Prefabs,
     sound_player: SoundPlayer,
 }
@@ -52,19 +52,7 @@ impl Gameplay {
         match &self.saved_prefab {
             Some(prefab) => {
                 if let Some(prefab) = self.prefabs.prefabs.get(&prefab) {
-                    for this_x in click_pos.0..click_pos.0 + prefab.len() {
-                        let command_x = this_x - click_pos.0;
-
-                        for this_y in click_pos.1..click_pos.1 + prefab[command_x].len() {
-                            let command_y = this_y - click_pos.1;
-
-                            let entity = &mut entities[this_x][this_y];
-                            let new_state = prefab[command_x][command_y];
-                            if !(entity.state == State::Unborn && new_state == State::Dead) {
-                                entity.state = new_state;
-                            }
-                        }
-                    }
+                    Self::paste_cells(click_pos, prefab, entities);
 
                     self.saved_prefab = None;
                     self.coords_pressed.push(click_pos);
@@ -113,6 +101,10 @@ impl Gameplay {
                 .play_sound(Cursor::new(self.game_sounds.tick_sound));
         }
 
+        if user_input.kb_input.is_pressed(Key::Space) {
+            self.playing = !self.playing;
+        }
+
         if user_input.kb_input.is_pressed(Key::F1) {
             self.show_ui = !self.show_ui;
         }
@@ -123,6 +115,22 @@ impl Gameplay {
 
         if user_input.kb_input.is_pressed(Key::F10) {
             self.show_debug = !self.show_debug;
+        }
+
+        if user_input.kb_input.is_pressed(Key::F3) {
+            let states: Vec<Vec<State>> = {
+                let mut ret = vec![];
+                for this_row in entities.iter() {
+                    let mut ret_row = vec![];
+                    for entity in this_row {
+                        ret_row.push(entity.state)
+                    }
+                    ret.push(ret_row);
+                }
+
+                ret
+            };
+            simple_serialization::save(&states, "okay.json").unwrap();
         }
 
         if self.auto_increment && self.playing {
@@ -207,6 +215,25 @@ impl Gameplay {
         for (x, this_row) in current_entities.iter_mut().enumerate() {
             for (y, entity) in this_row.iter_mut().enumerate() {
                 entity.state = ret[x][y];
+            }
+        }
+    }
+
+    fn paste_cells(click_pos: UsizeTuple, prefab: &[Vec<State>], entities: &mut [Vec<Entity>]) {
+        for this_x in click_pos.0..click_pos.0 + prefab.len() {
+            let command_x = this_x - click_pos.0;
+
+            for this_y in click_pos.1..click_pos.1 + prefab[command_x].len() {
+                if this_x >= entities.len() || this_y >= entities[this_x].len() {
+                    continue;
+                }
+                let command_y = this_y - click_pos.1;
+
+                let entity = &mut entities[this_x][this_y];
+                let new_state = prefab[command_x][command_y];
+                if !(entity.state == State::Unborn && new_state == State::Dead) {
+                    entity.state = new_state;
+                }
             }
         }
     }
@@ -364,7 +391,10 @@ impl Prefabs {
             Prefab::Tumbler,
             simple_serialization::load("resources/prefabs/tumbler.json")?,
         );
-        // prefabs.insert(Prefab::GliderGun, simple_serialization::load("glider_gun.json")?);
+        prefabs.insert(
+            Prefab::GliderGun,
+            simple_serialization::load("resources/prefabs/glider_gun.json")?,
+        );
 
         Ok(Prefabs { prefabs })
     }
