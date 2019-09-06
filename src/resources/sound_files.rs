@@ -1,8 +1,5 @@
 use std::collections::HashMap;
-use std::io::Cursor;
 use std::sync::Arc;
-
-pub type SoundType = Arc<&'static [u8]>;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Sounds {

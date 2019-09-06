@@ -10,18 +10,19 @@ use failure::Error;
 const DEFAULT_SIZE: Vec2 = Vec2 { x: 1280.0, y: 720.0 };
 const ARRAY_SIZE: Vec2Int = Vec2Int { x: 21, y: 21 };
 
-pub struct Game {
+pub struct ECS {
     pub resources: AnyMap,
+    pub entities: Vec<usize>,
     window: Window,
     user_input: UserInput,
     renderer: Option<TypedRenderer>,
     camera: Camera,
     gameplay: Gameplay,
-    entities: Vec<Vec<Entity>>,
+    // entities: Vec<Vec<Entity>>,
     time: Time,
 }
 
-impl Game {
+impl ECS {
     pub fn new() -> Result<Self, Error> {
         // Resources
         let mut resources = AnyMap::new();

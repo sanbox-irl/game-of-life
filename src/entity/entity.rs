@@ -1,4 +1,4 @@
-use super::{Vec2};
+use super::Vec2;
 
 #[derive(Debug)]
 pub struct Entity {

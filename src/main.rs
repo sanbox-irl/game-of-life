@@ -13,7 +13,7 @@ extern crate imgui;
 extern crate maplit;
 
 mod ecs;
-mod game;
+mod entity;
 mod rendering;
 mod resources;
 mod utilities;
@@ -21,7 +21,7 @@ mod utilities;
 fn main() {
     env_logger::init();
 
-    let mut game = match game::Game::new() {
+    let mut game = match ecs::ECS::new() {
         Ok(game) => game,
         Err(e) => {
             error!("{}", e);
