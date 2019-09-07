@@ -1016,7 +1016,12 @@ impl<I: Instance> Renderer<I> {
 
         let mut frag_push_constants: [u32; FRAG_PUSH_CONSTANTS_SIZE] = [0; FRAG_PUSH_CONSTANTS_SIZE];
         frag_push_constants[3] = game_world.game_colors.grid_lines.into();
-        frag_push_constants[4] = game_world.game_colors.grid_line_width.to_bits();
+        // these are basic random values, but they look pretty alright
+        frag_push_constants[4] = (0.5f32.min(
+            1.0f32.max(game_world.camera_scale / (game_world.aspect_ratio * 10.0))
+                * game_world.game_colors.grid_line_width,
+        ))
+        .to_bits();
         let grid_colors = game_world.game_colors.grid_line_color.into_raw_u32();
         frag_push_constants[8] = grid_colors[0];
         frag_push_constants[9] = grid_colors[1];

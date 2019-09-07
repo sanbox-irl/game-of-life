@@ -1,4 +1,4 @@
-use super::{Color, Gameplay, Prefab, Time, UserInput, Vec2, Window as WinitWindow};
+use super::{Camera, Color, Gameplay, Prefab, Time, UserInput, Vec2, Window as WinitWindow};
 use imgui::{Condition, Context, FontConfig, FontSource, ImGuiWindowFlags, ImStr, StyleVar, Ui, Window};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use std::collections::HashMap;
@@ -291,7 +291,7 @@ Press F1 to hide all UI."
             });
     }
 
-    pub fn make_debug_ui(ui_handler: &UiHandler<'_>, gameplay: &Gameplay, time: &Time) {
+    pub fn make_debug_ui(ui_handler: &UiHandler<'_>, gameplay: &Gameplay, camera: &mut Camera, time: &Time) {
         let ui = &ui_handler.ui;
         if gameplay.show_debug {
             return;
@@ -301,7 +301,20 @@ Press F1 to hide all UI."
         Window::new(ui, im_str!("Debug Output"))
             .size([300.0, 80.0], Condition::FirstUseEver)
             .build(|| {
-                ui.label_text(im_str!("Delta Time:"), &im_str!("{}", time.delta_time));
+                ui.label_text(im_str!("Delta Time"), &im_str!("{}", time.delta_time));
+                ui.separator();
+                ui.text(im_str!("Camera Debug Output"));
+
+                let mut pos_float_2: [f32; 2] = camera.position.into();
+                let changed = ui
+                    .slider_float2(im_str!("Position"), &mut pos_float_2, 0.0, 20.0)
+                    .build();
+                if changed {
+                    camera.position = pos_float_2.into();
+                }
+
+                ui.slider_float(im_str!("Scale"), &mut camera.scale, 0.5, 100.0).build();
+                ui.slider_float(im_str!("Aspect Ratio"), &mut camera.aspect_ratio, 0.5, 100.0).build();
             });
     }
     fn convert_vk_to_imgui_key(key: &Key) -> Option<usize> {

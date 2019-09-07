@@ -1,6 +1,4 @@
-use super::ecs::{
-    Camera, Entity, Gameplay, Imgui, MouseButton, UiHandler, UserInput, Window,
-};
+use super::ecs::{Camera, Entity, Gameplay, Imgui, MouseButton, UiHandler, UserInput, Window};
 use super::rendering::{
     DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands, TypedRenderer,
 };
@@ -76,9 +74,9 @@ impl Game {
             let mut ui_frame = dear_imgui.begin_frame(&self.window);
 
             Imgui::make_ui(&mut ui_frame, &mut self.gameplay);
-            Imgui::make_debug_ui(&ui_frame, &self.gameplay, &self.time);
+            Imgui::make_debug_ui(&ui_frame, &self.gameplay, &mut self.camera, &self.time);
 
-            self.camera.update(&self.user_input);
+            self.camera.update(&self.user_input, &self.window);
 
             // Single selection
             if self.user_input.mouse_input.is_held(MouseButton::Left) {
@@ -114,11 +112,12 @@ impl Game {
         if let Some(renderer) = &mut self.renderer {
             let result = {
                 ui_frame.prepare_draw(&self.window);
+                let position = self.camera.position_scaled();
 
                 let instructions = RendererCommands {
                     game_world_draw_commands: Some(GameWorldDrawCommands {
                         aspect_ratio: self.camera.aspect_ratio,
-                        camera_position: &self.camera.position,
+                        camera_position: &position,
                         camera_scale: self.camera.scale,
                         entities: &mut self.entities,
                         game_colors: &self.gameplay.game_colors,

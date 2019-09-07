@@ -1,4 +1,4 @@
-use super::{UserInput, MouseButton, Vec2};
+use super::{MouseButton, UserInput, Vec2, Window as WinitWindow};
 use winit::VirtualKeyCode;
 
 pub struct Camera {
@@ -19,7 +19,7 @@ impl Camera {
         }
     }
 
-    pub fn update(&mut self, user_input: &UserInput) {
+    pub fn update(&mut self, user_input: &UserInput, winit_window: &WinitWindow) {
         let mut move_vector: Vec2 =
             user_input
                 .kb_input
@@ -32,24 +32,37 @@ impl Camera {
                     VirtualKeyCode::A | VirtualKeyCode::Left => vec - Vec2::RIGHT,
                     _ => vec,
                 });
-        
 
         if move_vector != Vec2::ZERO {
             move_vector.normalize();
         }
 
-        let mut pan = move_vector * self.pan_speed;
+        let mut pan = move_vector;
 
         if user_input.mouse_input.is_held(MouseButton::Middle) {
-            pan -= user_input.mouse_input.mouse_delta_position() / (self.scale * 40.0);
+            let window_size = winit_window.get_window_size();
+            let old_pos = self.display_to_world_position(
+                user_input.mouse_input.mouse_position_last_frame,
+                window_size.clone(),
+            );
+            let new_pos = self.display_to_world_position(user_input.mouse_input.mouse_position, window_size);
+
+            let mut ret = (new_pos - old_pos) * self.scale;
+            ret.y *= self.aspect_ratio;
+
+            pan += ret;
         }
 
-        self.position += pan;
+        self.position -= pan / self.scale;
 
         if user_input.mouse_input.mouse_vertical_scroll_delta != 0.0 {
             self.scale += user_input.mouse_input.mouse_vertical_scroll_delta;
             self.scale = self.scale.max(0.5);
         }
+    }
+
+    pub fn position_scaled(&self) -> Vec2 {
+        self.position / self.scale
     }
 
     pub fn display_to_world_position(&self, display_pos: Vec2, window_size: Vec2) -> Vec2 {
@@ -66,8 +79,9 @@ impl Camera {
             percentage_of_screen.y * 2.0 - 1.0,
         );
         info!("Clip space is {}", clip_space);
-        let mut ret = (clip_space + self.position) * self.scale;
+        let mut ret = clip_space * self.scale + self.position;
         ret.y = ret.y / self.aspect_ratio;
+        info!("Real Position is {}", ret);
         ret
     }
 }

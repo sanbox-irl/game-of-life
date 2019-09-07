@@ -38,10 +38,10 @@ fn main() {
         Ok(()) => {
             println!("Exiting cleanly and gracefully.");
         }
-
         Err(e) => {
             error!("{}", e);
-            error!("{}", e.backtrace())
+            error!("{}", e.backtrace());
+            error!("Backtrace (if enabled): {}", e.backtrace());
         }
     };
 }

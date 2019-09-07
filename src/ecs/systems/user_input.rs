@@ -232,10 +232,6 @@ impl MouseInput {
         let index: usize = mouse_button.into();
         self.mouse_released[index] || self.mouse_input_taken
     }
-
-    pub fn mouse_delta_position(&self) -> Vec2 {
-        self.mouse_position - self.mouse_position_last_frame
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
