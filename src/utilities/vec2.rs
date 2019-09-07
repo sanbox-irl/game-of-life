@@ -1,4 +1,5 @@
 use std::fmt::{self, Display};
+use std::cmp::Ord;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Vec2 {
@@ -39,6 +40,12 @@ impl Vec2 {
     #[allow(dead_code)]
     pub fn to_bits(self) -> [u32; 2] {
         [self.x.to_bits(), self.y.to_bits()]
+    }
+
+    pub fn clamp_components(&mut self, min_vec: &Vec2, max_vec: &Vec2) {
+        self.x = self.x.max(min_vec.x).min(max_vec.x);
+        
+        self.y = self.y.max(min_vec.y).min(max_vec.y);
     }
 }
 

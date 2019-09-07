@@ -3,12 +3,12 @@ use super::rendering::{
     DrawingError, GameWorldDrawCommands, ImGuiDrawCommands, RendererCommands, TypedRenderer,
 };
 use super::resources::SoundsVFX;
-use super::utilities::{Time, Vec2, Vec2Int};
+use super::utilities::{Time, Vec2};
 use anymap::AnyMap;
 use failure::Error;
 
 const DEFAULT_SIZE: Vec2 = Vec2 { x: 1280.0, y: 720.0 };
-const ARRAY_SIZE: Vec2Int = Vec2Int { x: 51, y: 51 };
+const ARRAY_SIZE: Vec2 = Vec2 { x: 101.0, y: 101.0 };
 
 pub struct Game {
     pub resources: AnyMap,
@@ -35,9 +35,9 @@ impl Game {
 
         // Initialize Entities...
         let mut entities = vec![];
-        for x in 0..ARRAY_SIZE.x {
+        for x in 0..ARRAY_SIZE.x as i32 {
             let mut this_vec = vec![];
-            for y in 0..ARRAY_SIZE.y {
+            for y in 0..ARRAY_SIZE.y as i32 {
                 this_vec.push(Entity::new(Vec2::new(x as f32, y as f32)));
             }
             entities.push(this_vec);
@@ -76,7 +76,7 @@ impl Game {
             Imgui::make_ui(&mut ui_frame, &mut self.gameplay);
             Imgui::make_debug_ui(&ui_frame, &self.gameplay, &mut self.camera, &self.time);
 
-            self.camera.update(&self.user_input, &self.window);
+            self.camera.update(&self.user_input, &self.window, &ARRAY_SIZE);
 
             // Single selection
             if self.user_input.mouse_input.is_held(MouseButton::Left) {

@@ -19,17 +19,17 @@ impl Camera {
         }
     }
 
-    pub fn update(&mut self, user_input: &UserInput, winit_window: &WinitWindow) {
+    pub fn update(&mut self, user_input: &UserInput, winit_window: &WinitWindow, game_size: &Vec2) {
         let mut move_vector: Vec2 =
             user_input
                 .kb_input
                 .held_keys
                 .iter()
                 .fold(Vec2::ZERO, |vec, key| match *key {
-                    VirtualKeyCode::W | VirtualKeyCode::Up => vec - Vec2::UP,
-                    VirtualKeyCode::S | VirtualKeyCode::Down => vec + Vec2::UP,
-                    VirtualKeyCode::D | VirtualKeyCode::Right => vec + Vec2::RIGHT,
-                    VirtualKeyCode::A | VirtualKeyCode::Left => vec - Vec2::RIGHT,
+                    VirtualKeyCode::W | VirtualKeyCode::Up => vec + Vec2::UP,
+                    VirtualKeyCode::S | VirtualKeyCode::Down => vec - Vec2::UP,
+                    VirtualKeyCode::D | VirtualKeyCode::Right => vec - Vec2::RIGHT,
+                    VirtualKeyCode::A | VirtualKeyCode::Left => vec + Vec2::RIGHT,
                     _ => vec,
                 });
 
@@ -37,7 +37,7 @@ impl Camera {
             move_vector.normalize();
         }
 
-        let mut pan = move_vector;
+        let mut pan = move_vector * (self.scale * 0.5) * self.pan_speed;
 
         if user_input.mouse_input.is_held(MouseButton::Middle) {
             let window_size = winit_window.get_window_size();
@@ -50,14 +50,17 @@ impl Camera {
             let mut ret = (new_pos - old_pos) * self.scale;
             ret.y *= self.aspect_ratio;
 
-            pan += ret;
+            pan += ret / self.scale;
         }
 
-        self.position -= pan / self.scale;
+        self.position -= pan;
+        let mut size = game_size.clone();
+        size.y *= self.aspect_ratio;
+        self.position.clamp_components(&Vec2::ZERO, &size);
 
         if user_input.mouse_input.mouse_vertical_scroll_delta != 0.0 {
             self.scale += user_input.mouse_input.mouse_vertical_scroll_delta;
-            self.scale = self.scale.max(0.5);
+            self.scale = self.scale.min(game_size.x).max(0.5);
         }
     }
 

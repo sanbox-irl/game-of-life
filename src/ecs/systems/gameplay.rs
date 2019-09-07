@@ -56,8 +56,10 @@ impl Gameplay {
 
                     self.saved_prefab = None;
                     self.coords_pressed.push(click_pos);
-                    self.sound_player
-                        .play_sound(Cursor::new(self.game_sounds.alive_sound));
+                    self.sound_player.play_sound(
+                        Cursor::new(self.game_sounds.alive_sound),
+                        self.game_sounds.sfx_volume,
+                    );
 
                     return;
                 } else {
@@ -73,13 +75,17 @@ impl Gameplay {
             let new_state = entity.flip_state();
             match new_state {
                 State::Alive => {
-                    self.sound_player
-                        .play_sound(Cursor::new(self.game_sounds.alive_sound));
+                    self.sound_player.play_sound(
+                        Cursor::new(self.game_sounds.alive_sound),
+                        self.game_sounds.sfx_volume,
+                    );
                 }
 
                 State::Dead => {
-                    self.sound_player
-                        .play_sound(Cursor::new(self.game_sounds.dead_sound));
+                    self.sound_player.play_sound(
+                        Cursor::new(self.game_sounds.dead_sound),
+                        self.game_sounds.sfx_volume,
+                    );
                 }
 
                 _ => {}
@@ -97,8 +103,10 @@ impl Gameplay {
         if user_input.kb_input.is_pressed(Key::Return) {
             Gameplay::set_rules(entities);
             do_not_update_again = true;
-            self.sound_player
-                .play_sound(Cursor::new(self.game_sounds.tick_sound));
+            self.sound_player.play_sound(
+                Cursor::new(self.game_sounds.tick_sound),
+                self.game_sounds.sfx_volume,
+            );
         }
 
         if user_input.kb_input.is_pressed(Key::Space) {
@@ -332,6 +340,8 @@ pub struct GameSounds {
     dead_sound: SoundFile,
     tick_sound: SoundFile,
     music: SoundFile,
+    sfx_volume: f32,
+    msc_volume: f32,
 }
 
 impl GameSounds {
@@ -349,6 +359,8 @@ impl GameSounds {
             dead_sound,
             tick_sound,
             music,
+            sfx_volume: 1.0,
+            msc_volume: 1.0,
         }
     }
 }
