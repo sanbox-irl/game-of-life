@@ -24,8 +24,8 @@ impl SoundsVFX {
         let alive = &include_bytes!("../../resources/sounds/create.ogg")[..];
         let dead = &include_bytes!("../../resources/sounds/kill.ogg")[..];
         let tick = &include_bytes!("../../resources/sounds/tick.ogg")[..];
-        let music_intro = &include_bytes!("../../resources/music/game_of_life_intro.ogg")[..];
-        let music_main = &include_bytes!("../../resources/music/game_of_life_main.ogg")[..];
+        let music_intro = &include_bytes!("../../resources/music/intro.ogg")[..];
+        let music_main = &include_bytes!("../../resources/music/main.ogg")[..];
 
         SoundsVFX {
             sounds: hashmap![
