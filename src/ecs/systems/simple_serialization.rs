@@ -18,6 +18,14 @@ pub fn load(location: &'static str) -> Result<Vec<Vec<State>>, Error> {
     Ok(flip_vector(&prefab))
 }
 
+// pub fn serialize(data: &[Vec<State>]) -> Result<String, Error> {
+//     Ok(serde_json::to_string(&flip_vector(data)).map_err(|e| SerializationError::Serialize(e))?)
+// }
+
+// pub fn deserialize(json: &str) -> Result<Vec<Vec<State>>, Error> {
+//     Ok(serde_json::from_str(json).map_err(|e| SerializationError::Deserialize(e))?)
+// }
+
 fn flip_vector(original: &[Vec<State>]) -> Vec<Vec<State>> {
     // iterate over the Vec:
     let mut ret: Vec<Vec<State>> = vec![];

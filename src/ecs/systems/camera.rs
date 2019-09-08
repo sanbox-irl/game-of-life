@@ -1,4 +1,4 @@
-use super::{MouseButton, UserInput, Vec2, Window as WinitWindow};
+use super::{MouseButton, UserInput, Vec2, Window as WinitWindow, Vec2Int};
 use winit::VirtualKeyCode;
 
 pub struct Camera {
@@ -19,7 +19,7 @@ impl Camera {
         }
     }
 
-    pub fn update(&mut self, user_input: &UserInput, winit_window: &WinitWindow, game_size: &Vec2) {
+    pub fn update(&mut self, user_input: &UserInput, winit_window: &WinitWindow, game_size: &Vec2Int) {
         let mut move_vector: Vec2 =
             user_input
                 .kb_input
@@ -54,13 +54,13 @@ impl Camera {
         }
 
         self.position -= pan;
-        let mut size = game_size.clone();
+        let mut size: Vec2 = game_size.clone().into();
         size.y *= self.aspect_ratio;
         self.position.clamp_components(&Vec2::ZERO, &size);
 
         if user_input.mouse_input.mouse_vertical_scroll_delta != 0.0 {
             self.scale += user_input.mouse_input.mouse_vertical_scroll_delta;
-            self.scale = self.scale.min(game_size.x).max(0.5);
+            self.scale = self.scale.min(size.x * 2.0).max(0.5);
         }
     }
 

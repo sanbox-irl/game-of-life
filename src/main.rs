@@ -10,6 +10,8 @@ extern crate failure;
 extern crate imgui;
 #[macro_use]
 extern crate maplit;
+#[macro_use]
+extern crate bitflags;
 
 mod ecs;
 mod game;

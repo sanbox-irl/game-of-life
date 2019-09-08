@@ -1,6 +1,6 @@
 use super::{
     simple_serialization, Color, Entity, MouseButton, Music, Prefab, SoundPlayer, Sounds, SoundsVFX, State,
-    Time, UserInput,
+    Time, UserInput, Vec2, Vec2Int,
 };
 use anymap::AnyMap;
 use rodio::Sink;
@@ -23,13 +23,16 @@ pub struct Gameplay {
     pub game_colors: GameColors,
     pub game_sounds: GameSounds,
     pub saved_prefab: Option<Prefab>,
+    game_size: Vec2,
+    next_game_size: Option<Vec2>,
     coords_pressed: Vec<UsizeTuple>,
     prefabs: Prefabs,
     sound_player: SoundPlayer,
+    flags: GameplayFlags,
 }
 
 impl Gameplay {
-    pub fn new(resources: &AnyMap) -> Result<Self, Error> {
+    pub fn new(resources: &AnyMap, game_size: Vec2) -> Result<Self, Error> {
         let sound_player = SoundPlayer::new();
         let music_sink = sound_player.make_sink();
 
@@ -49,9 +52,31 @@ impl Gameplay {
             sound_player: SoundPlayer::new(),
             saved_prefab: None,
             prefabs: Prefabs::new()?,
+            game_size,
+            next_game_size: None,
+            flags: GameplayFlags::empty(),
         };
 
         Ok(this)
+    }
+
+    pub fn game_size(&self) -> Vec2Int {
+        self.game_size.into()
+    }
+
+    pub fn next_game_size(&self) -> Vec2Int {
+        match self.next_game_size {
+            Some(gz) => gz.into(),
+            None => self.game_size.into()
+        }
+    }
+
+    pub fn set_next_game_size(&mut self, game_size: Vec2Int) {
+        self.next_game_size = Some(game_size.into());
+    }
+
+    pub fn resize_this_frame(&mut self) {
+        self.flags.insert(GameplayFlags::RESIZE);
     }
 
     pub fn select(&mut self, click_pos: UsizeTuple, entities: &mut [Vec<Entity>]) {
@@ -100,6 +125,35 @@ impl Gameplay {
         }
     }
 
+    pub fn new_size(&mut self, entities: &mut [Vec<Entity>]) -> Option<Vec<Vec<Entity>>> {
+        if self.flags.contains(GameplayFlags::RESIZE) {
+            if let Some(next_size) = self.next_game_size {
+                let mut new_entities = Self::create_game_world(next_size);
+
+                let old_world = Self::to_pure_states(entities);
+                let center_offset: Vec2 = next_size / 2.0 - self.game_size / 2.0;
+                let center_round_down: Vec2Int = center_offset.into();
+
+                // Throw away if under zero.
+                // in the future, we can sheer
+                if !(center_round_down.x < 0 || center_round_down.y < 0) {
+                    Self::paste_cells(
+                        center_round_down.into_raw_usize().unwrap(),
+                        &old_world,
+                        &mut new_entities,
+                    );
+                }
+                self.game_size = next_size;
+                self.flags.remove(GameplayFlags::RESIZE);
+                Some(new_entities)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     pub fn update(&mut self, user_input: &UserInput, entities: &mut [Vec<Entity>], time: &Time) {
         if user_input.mouse_input.is_released(MouseButton::Left) {
             self.coords_pressed.clear();
@@ -132,18 +186,7 @@ impl Gameplay {
         }
 
         if user_input.kb_input.is_pressed(Key::F3) {
-            let states: Vec<Vec<State>> = {
-                let mut ret = vec![];
-                for this_row in entities.iter() {
-                    let mut ret_row = vec![];
-                    for entity in this_row {
-                        ret_row.push(entity.state)
-                    }
-                    ret.push(ret_row);
-                }
-
-                ret
-            };
+            let states = Self::to_pure_states(entities);
             simple_serialization::save(&states, "okay.json").unwrap();
         }
 
@@ -272,6 +315,30 @@ impl Gameplay {
         let y = Self::wrap(current_pos.1, vertical_move.reverse(), entities[0].len());
 
         return &entities[x][y];
+    }
+
+    pub fn create_game_world(size: Vec2) -> Vec<Vec<Entity>> {
+        let mut entities = vec![];
+        for x in 0..size.x as i32 {
+            let mut this_vec = vec![];
+            for y in 0..size.y as i32 {
+                this_vec.push(Entity::new(Vec2::new(x as f32, y as f32)));
+            }
+            entities.push(this_vec);
+        }
+        entities
+    }
+
+    fn to_pure_states(entities: &mut [Vec<Entity>]) -> Vec<Vec<State>> {
+        let mut ret = vec![];
+        for this_row in entities.iter() {
+            let mut ret_row = vec![];
+            for entity in this_row {
+                ret_row.push(entity.state)
+            }
+            ret.push(ret_row);
+        }
+        ret
     }
 
     fn wrap(current: usize, move_amount: Move, wrap_size: usize) -> usize {
@@ -427,5 +494,11 @@ impl Prefabs {
         );
 
         Ok(Prefabs { prefabs })
+    }
+}
+
+bitflags! {
+    struct GameplayFlags: u32 {
+        const RESIZE = 0b00000001;
     }
 }

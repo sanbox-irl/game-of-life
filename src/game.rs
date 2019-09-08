@@ -8,7 +8,7 @@ use anymap::AnyMap;
 use failure::Error;
 
 const DEFAULT_SIZE: Vec2 = Vec2 { x: 1280.0, y: 720.0 };
-const ARRAY_SIZE: Vec2 = Vec2 { x: 101.0, y: 101.0 };
+const DEFAULT_GAME_SIZE: Vec2 = Vec2 { x: 6.0, y: 6.0 };
 
 pub struct Game {
     pub resources: AnyMap,
@@ -34,16 +34,8 @@ impl Game {
         let camera = Camera::new_at_position(Vec2::new(0.0, 0.0), 1.0);
 
         // Initialize Entities...
-        let mut entities = vec![];
-        for x in 0..ARRAY_SIZE.x as i32 {
-            let mut this_vec = vec![];
-            for y in 0..ARRAY_SIZE.y as i32 {
-                this_vec.push(Entity::new(Vec2::new(x as f32, y as f32)));
-            }
-            entities.push(this_vec);
-        }
-
-        let gameplay = Gameplay::new(&resources)?;
+        let entities = Gameplay::create_game_world(DEFAULT_GAME_SIZE);
+        let gameplay = Gameplay::new(&resources, DEFAULT_GAME_SIZE)?;
 
         Ok(Game {
             window,
@@ -76,7 +68,12 @@ impl Game {
             Imgui::make_ui(&mut ui_frame, &mut self.gameplay);
             Imgui::make_debug_ui(&ui_frame, &self.gameplay, &mut self.camera, &self.time);
 
-            self.camera.update(&self.user_input, &self.window, &ARRAY_SIZE);
+            if let Some(new_entities) = self.gameplay.new_size(&mut self.entities) {
+                self.entities = new_entities;
+            }
+
+            self.camera
+                .update(&self.user_input, &self.window, &self.gameplay.game_size());
 
             // Single selection
             if self.user_input.mouse_input.is_held(MouseButton::Left) {

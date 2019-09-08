@@ -1,5 +1,5 @@
 use std::fmt::{self, Display};
-use std::cmp::Ord;
+use super::Vec2Int;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Vec2 {
@@ -44,7 +44,7 @@ impl Vec2 {
 
     pub fn clamp_components(&mut self, min_vec: &Vec2, max_vec: &Vec2) {
         self.x = self.x.max(min_vec.x).min(max_vec.x);
-        
+
         self.y = self.y.max(min_vec.y).min(max_vec.y);
     }
 }
@@ -150,5 +150,14 @@ impl From<[f32; 2]> for Vec2 {
 impl From<Vec2> for [f32; 2] {
     fn from(w: Vec2) -> [f32; 2] {
         [w.x, w.y]
+    }
+}
+
+impl From<Vec2Int> for Vec2 {
+    fn from(other: Vec2Int) -> Vec2 {
+        Vec2 {
+            x: other.x as f32,
+            y: other.y as f32,
+        }
     }
 }

@@ -125,7 +125,8 @@ impl Imgui {
                     ui.slider_float(im_str!("SFX"), &mut gameplay.game_sounds.sfx_volume, 0.0, 1.0)
                         .build();
                     let mut music_volume = gameplay.game_sounds.music_volume();
-                    let changed = ui.slider_float(im_str!("Music"), &mut music_volume, 0.0, 1.0)
+                    let changed = ui
+                        .slider_float(im_str!("Music"), &mut music_volume, 0.0, 1.0)
                         .build();
                     if changed {
                         gameplay.game_sounds.set_music_volume(music_volume);
@@ -211,6 +212,18 @@ impl Imgui {
 
                     if do_auto_increment || do_manual_increment {
                         gameplay.auto_increment = !gameplay.auto_increment;
+                    }
+
+                    let mut final_array: [i32; 2] = gameplay.next_game_size().into();
+                    let changed = ui.input_int2(im_str!("##Resize Game"), &mut final_array).build();
+                    if changed {
+                        gameplay.set_next_game_size(final_array.into());
+                    }
+
+                    ui.same_line_with_spacing(ui.get_item_rect_size()[0], 10.0);
+
+                    if ui.button(im_str!("Resize Game"), [60.0, 14.0]) {
+                        gameplay.resize_this_frame();
                     }
                 });
         }
