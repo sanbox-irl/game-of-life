@@ -18,19 +18,14 @@ pub struct SoundsVFX {
     music: HashMap<Music, &'static [u8]>,
 }
 
-macro_rules! get_sound {
-    ($name:expr) => {
-        &include_bytes!($name)[..]
-    };
-}
 
 impl SoundsVFX {
     pub fn new() -> Self {
-        let alive = get_sound!("../../resources/sounds/make_alive.wav");
-        let dead = get_sound!("../../resources/sounds/make_dead.wav");
-        let tick = get_sound!("../../resources/sounds/tick.wav");
-        let music_intro = get_sound!("../../resources/music/game_of_life_intro.ogg");
-        let music_main = get_sound!("../../resources/music/game_of_life_main.ogg");
+        let alive = &include_bytes!("../../resources/sounds/create.ogg")[..];
+        let dead = &include_bytes!("../../resources/sounds/kill.ogg")[..];
+        let tick = &include_bytes!("../../resources/sounds/tick.ogg")[..];
+        let music_intro = &include_bytes!("../../resources/music/game_of_life_intro.ogg")[..];
+        let music_main = &include_bytes!("../../resources/music/game_of_life_main.ogg")[..];
 
         SoundsVFX {
             sounds: hashmap![
