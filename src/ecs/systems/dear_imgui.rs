@@ -104,12 +104,13 @@ impl Imgui {
         }
 
         if gameplay.show_settings_control {
+            let y_size = 200.0;
             Window::new(ui, im_str!("Color"))
-                .size([300.0, 155.0], Condition::FirstUseEver)
+                .size([300.0, y_size], Condition::FirstUseEver)
                 .position(
                     [
                         ui_handler.size.x - ((ui_handler.size.x - PWS) / 2.0) - 300.0,
-                        (ui_handler.size.y - PWH * 1.5) - 255.0,
+                        (ui_handler.size.y - PWH * 1.5) - (y_size + 100.0),
                     ],
                     Condition::Always,
                 )
@@ -120,6 +121,17 @@ impl Imgui {
                         | ImGuiWindowFlags::NoMove,
                 )
                 .build(|| {
+                    // SOUND
+                    ui.slider_float(im_str!("SFX"), &mut gameplay.game_sounds.sfx_volume, 0.0, 1.0)
+                        .build();
+                    let mut music_volume = gameplay.game_sounds.music_volume();
+                    let changed = ui.slider_float(im_str!("Music"), &mut music_volume, 0.0, 1.0)
+                        .build();
+                    if changed {
+                        gameplay.game_sounds.set_music_volume(music_volume);
+                    }
+
+                    // COLORS
                     fn make_color<'p>(label: &'p ImStr, color: &mut Color, ui: &mut Ui<'_>) {
                         let mut bg_color: [f32; 3] = color.clone().into();
                         let do_it = ui.color_edit(label, &mut bg_color).build();
@@ -127,9 +139,7 @@ impl Imgui {
                             *color = bg_color.into();
                         }
                     }
-                    // SOUND
-
-                    // COLORS
+                    ui.separator();
                     make_color(im_str!("Alive"), &mut gameplay.game_colors.alive, ui);
                     make_color(im_str!("Dead"), &mut gameplay.game_colors.dead, ui);
                     make_color(im_str!("Unborn"), &mut gameplay.game_colors.unborn, ui);
@@ -139,18 +149,19 @@ impl Imgui {
 
                     // GRID LINES
                     ui.checkbox(im_str!("Grid Lines"), &mut gameplay.game_colors.grid_lines);
-                    {
-                        let str = im_str!("Grid Thickness");
-                        let _width = ui.push_item_width(-14.0 - ui.calc_text_size(str, false, -1.0)[0]);
-                        ui.same_line_with_spacing(ui.get_item_rect_size()[0], 31.0);
-                        ui.slider_float(
-                            im_str!("Grid Thickness"),
-                            &mut gameplay.game_colors.grid_line_width,
-                            0.0,
-                            0.5,
-                        )
-                        .build();
-                    }
+
+                    let str = im_str!("Grid Thickness");
+                    let _width = ui.push_item_width(-14.0 - ui.calc_text_size(str, false, -1.0)[0]);
+                    ui.same_line_with_spacing(ui.get_item_rect_size()[0], 31.0);
+                    ui.slider_float(
+                        im_str!("Grid Thickness"),
+                        &mut gameplay.game_colors.grid_line_width,
+                        0.0,
+                        0.5,
+                    )
+                    .build();
+                    drop(_width);
+
                     make_color(im_str!("Grid"), &mut gameplay.game_colors.grid_line_color, ui);
                 });
         }
@@ -313,8 +324,10 @@ Press F1 to hide all UI."
                     camera.position = pos_float_2.into();
                 }
 
-                ui.slider_float(im_str!("Scale"), &mut camera.scale, 0.5, 100.0).build();
-                ui.slider_float(im_str!("Aspect Ratio"), &mut camera.aspect_ratio, 0.5, 100.0).build();
+                ui.slider_float(im_str!("Scale"), &mut camera.scale, 0.5, 100.0)
+                    .build();
+                ui.slider_float(im_str!("Aspect Ratio"), &mut camera.aspect_ratio, 0.5, 100.0)
+                    .build();
             });
     }
     fn convert_vk_to_imgui_key(key: &Key) -> Option<usize> {

@@ -3,6 +3,7 @@ use super::{
     Time, UserInput,
 };
 use anymap::AnyMap;
+use rodio::Sink;
 use std::{fmt::Debug, io::Cursor};
 use winit::VirtualKeyCode as Key;
 
@@ -29,7 +30,10 @@ pub struct Gameplay {
 
 impl Gameplay {
     pub fn new(resources: &AnyMap) -> Result<Self, Error> {
-        Ok(Gameplay {
+        let sound_player = SoundPlayer::new();
+        let music_sink = sound_player.make_sink();
+
+        let this = Gameplay {
             auto_increment: false,
             coords_pressed: Vec::new(),
             increment_rate: 1.0,
@@ -41,11 +45,13 @@ impl Gameplay {
             show_play_control: true,
             show_settings_control: false,
             game_colors: GameColors::default(),
-            game_sounds: GameSounds::new(resources),
+            game_sounds: GameSounds::new(resources, music_sink),
             sound_player: SoundPlayer::new(),
             saved_prefab: None,
             prefabs: Prefabs::new()?,
-        })
+        };
+
+        Ok(this)
     }
 
     pub fn select(&mut self, click_pos: UsizeTuple, entities: &mut [Vec<Entity>]) {
@@ -336,32 +342,44 @@ impl Default for GameColors {
 }
 
 pub struct GameSounds {
+    pub sfx_volume: f32,
+    msc_volume: f32,
     alive_sound: SoundFile,
     dead_sound: SoundFile,
     tick_sound: SoundFile,
-    music: SoundFile,
-    sfx_volume: f32,
-    msc_volume: f32,
+    music_sink: Sink,
 }
 
 impl GameSounds {
-    pub fn new(resources: &AnyMap) -> Self {
-        let soundsfx: &SoundsVFX = resources.get().unwrap();
+    pub fn new(resources: &AnyMap, mut music_sink: Sink) -> Self {
+        let sounds_sfx: &SoundsVFX = resources.get().unwrap();
 
-        let alive_sound = soundsfx.get_sound(Sounds::MakeCellAlive);
-        let dead_sound = soundsfx.get_sound(Sounds::MakeCellDead);
-        let tick_sound = soundsfx.get_sound(Sounds::Tick);
+        let alive_sound = sounds_sfx.get_sound(Sounds::MakeCellAlive);
+        let dead_sound = sounds_sfx.get_sound(Sounds::MakeCellDead);
+        let tick_sound = sounds_sfx.get_sound(Sounds::Tick);
 
-        let music = soundsfx.get_music(Music::Main);
+        let intro_music = sounds_sfx.get_music(Music::Intro);
+        let music = sounds_sfx.get_music(Music::Main);
+        SoundPlayer::load_sink(&mut music_sink, intro_music);
+        SoundPlayer::load_sink_infinite(&mut music_sink, music);
 
         GameSounds {
             alive_sound,
             dead_sound,
             tick_sound,
-            music,
             sfx_volume: 1.0,
             msc_volume: 1.0,
+            music_sink,
         }
+    }
+
+    pub fn set_music_volume(&mut self, volume: f32) {
+        self.msc_volume = volume;
+        self.music_sink.set_volume(self.msc_volume);
+    }
+
+    pub fn music_volume(&self) -> f32 {
+        self.msc_volume
     }
 }
 
