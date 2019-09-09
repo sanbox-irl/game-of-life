@@ -170,11 +170,11 @@ impl Imgui {
         // Auto-Increment World
         if gameplay.show_play_control {
             Window::new(ui, im_str!("Game of Life"))
-                .size([300.0, 100.0], Condition::FirstUseEver)
+                .size([300.0, 150.0], Condition::FirstUseEver)
                 .position(
                     [
                         ui_handler.size.x - ((ui_handler.size.x - PWS) / 2.0) - 300.0,
-                        (ui_handler.size.y - PWH * 1.5) - 100.0,
+                        (ui_handler.size.y - PWH * 1.5) - 150.0,
                     ],
                     Condition::Always,
                 )
@@ -214,6 +214,8 @@ impl Imgui {
                         gameplay.auto_increment = !gameplay.auto_increment;
                     }
 
+                    ui.separator();
+
                     let mut final_array: [i32; 2] = gameplay.next_game_size().into();
                     let changed = ui.input_int2(im_str!("##Resize Game"), &mut final_array).build();
                     if changed {
@@ -222,9 +224,11 @@ impl Imgui {
 
                     ui.same_line_with_spacing(ui.get_item_rect_size()[0], 10.0);
 
-                    if ui.button(im_str!("Resize Game"), [60.0, 14.0]) {
+                    if ui.button(im_str!("Resize"), [100.0, 19.5]) {
                         gameplay.resize_this_frame();
                     }
+
+                    ui.separator();
                 });
         }
 

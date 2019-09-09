@@ -11,8 +11,8 @@ type UsizeTuple = (usize, usize);
 type SoundFile = &'static [u8];
 
 pub struct Gameplay {
-    pub auto_increment: bool,
     pub show_debug: bool,
+    pub auto_increment: bool,
     pub show_instructions: bool,
     pub show_play_control: bool,
     pub show_settings_control: bool,
@@ -23,6 +23,7 @@ pub struct Gameplay {
     pub game_colors: GameColors,
     pub game_sounds: GameSounds,
     pub saved_prefab: Option<Prefab>,
+    pub wrap_grid: bool,
     game_size: Vec2,
     next_game_size: Option<Vec2>,
     coords_pressed: Vec<UsizeTuple>,
@@ -45,6 +46,7 @@ impl Gameplay {
             show_instructions: true,
             show_ui: true,
             playing: true,
+            wrap_grid: false,
             show_play_control: true,
             show_settings_control: false,
             game_colors: GameColors::default(),
@@ -67,7 +69,7 @@ impl Gameplay {
     pub fn next_game_size(&self) -> Vec2Int {
         match self.next_game_size {
             Some(gz) => gz.into(),
-            None => self.game_size.into()
+            None => self.game_size.into(),
         }
     }
 
@@ -161,7 +163,7 @@ impl Gameplay {
 
         let mut do_not_update_again = false;
         if user_input.kb_input.is_pressed(Key::Return) {
-            Gameplay::set_rules(entities);
+            self.set_rules(entities);
             do_not_update_again = true;
             self.sound_player.play_sound(
                 Cursor::new(self.game_sounds.tick_sound),
@@ -194,58 +196,58 @@ impl Gameplay {
             self.current_time += time.delta_time;
             if self.increment_rate != 0.0 && self.current_time > (1.0 / self.increment_rate) {
                 if do_not_update_again == false {
-                    Gameplay::set_rules(entities);
+                    self.set_rules(entities);
                 }
                 self.current_time = 0.0;
             }
         }
     }
 
-    pub fn set_rules(current_entities: &mut [Vec<Entity>]) {
+    pub fn set_rules(&self, current_entities: &mut [Vec<Entity>]) {
         let mut ret: Vec<Vec<State>> = vec![];
         for (x, this_row) in current_entities.iter().enumerate() {
             let mut ret_row = vec![];
             for (y, entity) in this_row.iter().enumerate() {
-                let current_pos = (x, y);
+                let current_pos = Vec2Int::new(x as i32, y as i32);
                 let mut count = 0;
 
                 // Check Up-Left
-                if Self::entity_is_alive(current_entities, current_pos, Move::Negative, Move::Positive) {
+                if self.entity_is_alive(current_entities, current_pos - Vec2Int::RIGHT + Vec2Int::UP) {
                     count += 1;
                 }
 
                 // Check Up
-                if Self::entity_is_alive(current_entities, current_pos, Move::Remain, Move::Positive) {
+                if self.entity_is_alive(current_entities, current_pos + Vec2Int::UP) {
                     count += 1;
                 }
 
                 // Check Up-Right
-                if Self::entity_is_alive(current_entities, current_pos, Move::Positive, Move::Positive) {
+                if self.entity_is_alive(current_entities, current_pos + Vec2Int::RIGHT + Vec2Int::UP) {
                     count += 1;
                 }
 
                 // Check Right
-                if Self::entity_is_alive(current_entities, current_pos, Move::Positive, Move::Remain) {
+                if self.entity_is_alive(current_entities, current_pos + Vec2Int::RIGHT) {
                     count += 1;
                 }
 
                 // Check Down-Right
-                if Self::entity_is_alive(current_entities, current_pos, Move::Positive, Move::Negative) {
+                if self.entity_is_alive(current_entities, current_pos + Vec2Int::RIGHT - Vec2Int::UP) {
                     count += 1;
                 }
 
                 // Check Down
-                if Self::entity_is_alive(current_entities, current_pos, Move::Remain, Move::Negative) {
+                if self.entity_is_alive(current_entities, current_pos - Vec2Int::UP) {
                     count += 1;
                 }
 
                 // Check Down-Left
-                if Self::entity_is_alive(current_entities, current_pos, Move::Negative, Move::Negative) {
+                if self.entity_is_alive(current_entities, current_pos - Vec2Int::RIGHT - Vec2Int::UP) {
                     count += 1;
                 }
 
                 // Check Left
-                if Self::entity_is_alive(current_entities, current_pos, Move::Negative, Move::Remain) {
+                if self.entity_is_alive(current_entities, current_pos - Vec2Int::RIGHT) {
                     count += 1;
                 }
 
@@ -276,6 +278,30 @@ impl Gameplay {
         }
     }
 
+    fn entity_is_alive(&self, entities: &[Vec<Entity>], pos: Vec2Int) -> bool {
+        if self.wrap_grid {
+            let x = Self::wrap(pos.x, entities.len());
+            let y = Self::wrap(pos.y, entities[0].len());
+            entities[x][y].state == State::Alive
+        } else {
+            if pos.x > 0 && pos.x < entities.len() as i32 && pos.y > 0 && pos.y < entities[0].len() as i32 {
+                entities[pos.x as usize][pos.y as usize].state == State::Alive
+            } else {
+                false
+            }
+        }
+    }
+
+    fn wrap(current: i32, wrap_size: usize) -> usize {
+        if current < 0 {
+            wrap_size - 1
+        } else if current as usize == wrap_size {
+            0
+        } else {
+            current as usize
+        }
+    }
+
     fn paste_cells(click_pos: UsizeTuple, prefab: &[Vec<State>], entities: &mut [Vec<Entity>]) {
         for this_x in click_pos.0..click_pos.0 + prefab.len() {
             let command_x = this_x - click_pos.0;
@@ -293,28 +319,6 @@ impl Gameplay {
                 }
             }
         }
-    }
-
-    fn entity_is_alive(
-        entities: &[Vec<Entity>],
-        current_pos: (usize, usize),
-        horizontal_move: Move,
-        vertical_move: Move,
-    ) -> bool {
-        let entity = Self::get_entity(entities, current_pos, horizontal_move, vertical_move);
-        entity.state == State::Alive
-    }
-
-    fn get_entity<T>(
-        entities: &[Vec<T>],
-        current_pos: (usize, usize),
-        horizontal_move: Move,
-        vertical_move: Move,
-    ) -> &T {
-        let x = Self::wrap(current_pos.0, horizontal_move, entities.len());
-        let y = Self::wrap(current_pos.1, vertical_move.reverse(), entities[0].len());
-
-        return &entities[x][y];
     }
 
     pub fn create_game_world(size: Vec2) -> Vec<Vec<Entity>> {
@@ -339,37 +343,6 @@ impl Gameplay {
             ret.push(ret_row);
         }
         ret
-    }
-
-    fn wrap(current: usize, move_amount: Move, wrap_size: usize) -> usize {
-        if current == 0 && move_amount == Move::Negative {
-            wrap_size - 1
-        } else if current == wrap_size - 1 && move_amount == Move::Positive {
-            0
-        } else {
-            match move_amount {
-                Move::Positive => current + 1,
-                Move::Negative => current - 1,
-                Move::Remain => current,
-            }
-        }
-    }
-}
-
-#[derive(PartialEq)]
-enum Move {
-    Positive,
-    Negative,
-    Remain,
-}
-
-impl Move {
-    pub fn reverse(self) -> Self {
-        match self {
-            Move::Positive => Move::Negative,
-            Move::Negative => Move::Positive,
-            Move::Remain => Move::Remain,
-        }
     }
 }
 
